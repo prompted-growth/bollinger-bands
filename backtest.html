@@ -7,20 +7,15 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  
-  <!-- Load Recharts and its dependencies -->
-  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
-  <script src="https://unpkg.com/recharts@2.1.9/dist/Recharts.js"></script>
 </head>
 <body>
   <div id="root"></div>
   
   <script type="text/babel">
-    const { useState, useEffect } = React;
-    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = Recharts;
+    const { useState, useEffect, useRef } = React;
 
-    // Lucide React icons as SVG components
     const TrendingUp = () => (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
@@ -61,6 +56,8 @@
       const [data, setData] = useState(null);
       const [backtest, setBacktest] = useState(null);
       const [loading, setLoading] = useState(true);
+      const chartRef = useRef(null);
+      const chartInstance = useRef(null);
 
       const calculateBollingerBands = (prices, period = 20, stdDev = 2) => {
         if (prices.length < period) return null;
@@ -108,7 +105,7 @@
           const signal = getSignal(positionInBand);
           
           chartData.push({
-            index: i,
+            timestamp: historicalData[i].timestamp,
             price: currentPrice,
             upper: bands.upper,
             middle: bands.middle,
@@ -199,6 +196,97 @@
         fetchData();
       }, [coin]);
 
+      useEffect(() => {
+        if (!backtest || !chartRef.current) return;
+
+        // Destroy existing chart
+        if (chartInstance.current) {
+          chartInstance.current.destroy();
+        }
+
+        const ctx = chartRef.current.getContext('2d');
+        const displayData = backtest.chartData.slice(-100); // Last 100 points
+
+        chartInstance.current = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: displayData.map(d => d.timestamp.toLocaleDateString()),
+            datasets: [
+              {
+                label: 'Price',
+                data: displayData.map(d => d.price),
+                borderColor: '#FFFFFF',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                pointRadius: 0
+              },
+              {
+                label: 'Upper Band',
+                data: displayData.map(d => d.upper),
+                borderColor: '#EF4444',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                borderDash: [5, 5],
+                pointRadius: 0
+              },
+              {
+                label: 'Middle Band',
+                data: displayData.map(d => d.middle),
+                borderColor: '#3B82F6',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                pointRadius: 0
+              },
+              {
+                label: 'Lower Band',
+                data: displayData.map(d => d.lower),
+                borderColor: '#10B981',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                borderDash: [5, 5],
+                pointRadius: 0
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: {
+                  color: '#9CA3AF'
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: {
+                  color: '#9CA3AF',
+                  maxTicksLimit: 10
+                },
+                grid: {
+                  color: '#374151'
+                }
+              },
+              y: {
+                ticks: {
+                  color: '#9CA3AF'
+                },
+                grid: {
+                  color: '#374151'
+                }
+              }
+            }
+          }
+        });
+
+        return () => {
+          if (chartInstance.current) {
+            chartInstance.current.destroy();
+          }
+        };
+      }, [backtest]);
+
       if (loading) {
         return (
           <div className="min-h-screen bg-gray-900 text-white p-8 flex items-center justify-center">
@@ -216,7 +304,7 @@
         </div>;
       }
 
-      const { metrics, trades, chartData } = backtest;
+      const { metrics, trades } = backtest;
 
       return (
         <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -297,22 +385,9 @@
             </div>
 
             <div className="bg-gray-800 p-6 rounded-xl mb-8">
-              <h2 className="text-2xl font-bold mb-6">Price & Signals</h2>
-              <div className="overflow-x-auto">
-                <LineChart width={1100} height={400} data={chartData.slice(-200)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="index" stroke="#9CA3AF" />
-                  <YAxis stroke="#9CA3AF" domain={['auto', 'auto']} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                    labelStyle={{ color: '#9CA3AF' }}
-                  />
-                  <Legend />
-                  <Line type="monotone" dataKey="upper" stroke="#EF4444" strokeWidth={1} dot={false} name="Upper Band" />
-                  <Line type="monotone" dataKey="middle" stroke="#3B82F6" strokeWidth={1} dot={false} name="Middle Band" />
-                  <Line type="monotone" dataKey="lower" stroke="#10B981" strokeWidth={1} dot={false} name="Lower Band" />
-                  <Line type="monotone" dataKey="price" stroke="#FFFFFF" strokeWidth={2} dot={false} name="Price" />
-                </LineChart>
+              <h2 className="text-2xl font-bold mb-6">Price & Bollinger Bands (Last 100 Hours)</h2>
+              <div style={{ height: '400px' }}>
+                <canvas ref={chartRef}></canvas>
               </div>
             </div>
 
