@@ -5,3 +5,52 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+[functions]
+  directory = "netlify/functions"
+
+[[functions]]
+  path = "/check-alerts"
+  schedule = "*/2 * * * *"
+```
+
+5. Click **"Commit changes"**
+
+---
+
+## Step 3: Wait for Deployment
+
+Netlify will automatically deploy when you commit. After deployment:
+
+1. Go to your Netlify dashboard
+2. Click on **Functions** (left sidebar)
+3. You should see **2 functions**:
+   - `crypto-data` ✅
+   - `check-alerts` ✅ (with a clock icon ⏰ showing it's scheduled)
+
+---
+
+## Testing the Alert:
+
+The function runs every 2 minutes automatically, but you can also **manually test it**:
+
+1. Go to Netlify → Functions → `check-alerts`
+2. Click **"Test function"** or trigger it manually
+3. You should receive a text if any coin is in STRONG BUY/SELL territory!
+
+---
+
+## What Happens Next:
+
+Every 2 minutes, the function:
+- ✅ Checks BTC, ETH, SOL, ZEC
+- ✅ Calculates Bollinger Bands
+- ✅ Sends SMS if STRONG signal (0-5% or 95-100%)
+- ✅ Waits 1 hour before alerting again for same coin
+
+**Example text you'll get:**
+```
+🟢 BTC STRONG BUY!
+Price: $67,234
+Confidence: 92%
+Position: 2.3% in band
