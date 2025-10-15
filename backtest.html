@@ -783,36 +783,6 @@
               </div>
             </div>
 
-            {/* Warning Banner */}
-            <div className="bg-red-900/30 border-2 border-red-500 p-6 rounded-xl mb-8">
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 mt-1">
-                  <AlertTriangle />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold mb-3 text-red-400">⚠️ Educational Tool Only</h3>
-                  <ul className="space-y-2 text-sm text-gray-300">
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400 font-bold">•</span>
-                      <span><strong>Past performance does NOT guarantee future results.</strong> Markets change constantly.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400 font-bold">•</span>
-                      <span>This backtest uses perfect hindsight with instant fills and no slippage - real trading is messier.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400 font-bold">•</span>
-                      <span>Real trading includes emotional factors, network delays, and market impact that backtests cannot simulate.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400 font-bold">•</span>
-                      <span><strong>High leverage can lead to total loss.</strong> Never risk more than you can afford to lose.</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
             {/* Position Sizing Notice */}
             {positionSize === 100 && (
               <div className="bg-yellow-900/30 border-2 border-yellow-500 p-4 rounded-lg mb-6">
@@ -1401,6 +1371,36 @@
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* Warning Banner - Moved to Bottom */}
+            <div className="bg-red-900/30 border-2 border-red-500 p-6 rounded-xl mt-8">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 mt-1">
+                  <AlertTriangle />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold mb-3 text-red-400">⚠️ Educational Tool Only</h3>
+                  <ul className="space-y-2 text-sm text-gray-300">
+                    <li className="flex items-start gap-2">
+                      <span className="text-red-400 font-bold">•</span>
+                      <span><strong>Past performance does NOT guarantee future results.</strong> Markets change constantly.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-red-400 font-bold">•</span>
+                      <span>This backtest uses perfect hindsight with instant fills and no slippage - real trading is messier.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-red-400 font-bold">•</span>
+                      <span>Real trading includes emotional factors, network delays, and market impact that backtests cannot simulate.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-red-400 font-bold">•</span>
+                      <span><strong>High leverage can lead to total loss.</strong> Never risk more than you can afford to lose.</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
