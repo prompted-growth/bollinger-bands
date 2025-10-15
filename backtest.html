@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bollinger Bands Backtest</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.5.0/dist/Recharts.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = Recharts;
+
+    // Lucide React icons as SVG components
+    const TrendingUp = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+        <polyline points="17 6 23 6 23 12"></polyline>
+      </svg>
+    );
+
+    const TrendingDown = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline>
+        <polyline points="17 18 23 18 23 12"></polyline>
+      </svg>
+    );
+
+    const Percent = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="19" y1="5" x2="5" y2="19"></line>
+        <circle cx="6.5" cy="6.5" r="2.5"></circle>
+        <circle cx="17.5" cy="17.5" r="2.5"></circle>
+      </svg>
+    );
+
+    const Activity = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+      </svg>
+    );
+
+    const DollarSign = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="12" y1="1" x2="12" y2="23"></line>
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+      </svg>
+    );
+
+    function BollingerBacktest() {
+      const [coin, setCoin] = useState('BTC');
+      const [data, setData] = useState(null);
+      const [backtest, setBacktest] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      const calculateBollingerBands = (prices, period = 20, stdDev = 2) => {
+        if (prices.length < period) return null;
+        
+        const recentPrices = prices.slice(-period);
+        const sma = recentPrices.reduce((a, b) => a + b, 0) / period;
+        
+        const squaredDiffs = recentPrices.map(price => Math.pow(price - sma, 2));
+        const variance = squaredDiffs.reduce((a, b) => a + b, 0) / period;
+        const standardDeviation = Math.sqrt(variance);
+        
+        return {
+          upper: sma + (standardDeviation * stdDev),
+          middle: sma,
+          lower: sma - (standardDeviation * stdDev)
+        };
+      };
+
+      const getPositionInBand = (price, bands) => {
+        if (!bands) return null;
+        return ((price - bands.lower) / (bands.upper - bands.lower)) * 100;
+      };
+
+      const getSignal = (position) => {
+        if (position === null) return null;
+        if (position <= 5) return 'BUY';
+        if (position >= 95) return 'SELL';
+        return null;
+      };
+
+      const runBacktest = (historicalData) => {
+        const trades = [];
+        let position = null;
+        let entryPrice = 0;
+        let capital = 10000;
+        let totalCapital = capital;
+        
+        const chartData = [];
+        
+        for (let i = 20; i < historicalData.length; i++) {
+          const prices = historicalData.slice(0, i + 1).map(d => d.close);
+          const currentPrice = prices[prices.length - 1];
+          const bands = calculateBollingerBands(prices);
+          const positionInBand = getPositionInBand(currentPrice, bands);
+          const signal = getSignal(positionInBand);
+          
+          chartData.push({
+            index: i,
+            price: currentPrice,
+            upper: bands.upper,
+            middle: bands.middle,
+            lower: bands.lower,
+            signal: signal
+          });
+          
+          if (signal === 'BUY' && position !== 'long') {
+            if (position === 'short') {
+              const pnl = ((entryPrice - currentPrice) / entryPrice) * capital * 10;
+              totalCapital += pnl;
+              trades.push({
+                type: 'short',
+                entry: entryPrice,
+                exit: currentPrice,
+                pnl: pnl,
+                pnlPercent: ((entryPrice - currentPrice) / entryPrice) * 100 * 10,
+                timestamp: historicalData[i].timestamp
+              });
+            }
+            position = 'long';
+            entryPrice = currentPrice;
+            capital = totalCapital;
+          } else if (signal === 'SELL' && position !== 'short') {
+            if (position === 'long') {
+              const pnl = ((currentPrice - entryPrice) / entryPrice) * capital * 10;
+              totalCapital += pnl;
+              trades.push({
+                type: 'long',
+                entry: entryPrice,
+                exit: currentPrice,
+                pnl: pnl,
+                pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * 10,
+                timestamp: historicalData[i].timestamp
+              });
+            }
+            position = 'short';
+            entryPrice = currentPrice;
+            capital = totalCapital;
+          }
+        }
+        
+        const winningTrades = trades.filter(t => t.pnl > 0);
+        const losingTrades = trades.filter(t => t.pnl < 0);
+        const winRate = trades.length > 0 ? (winningTrades.length / trades.length) * 100 : 0;
+        const totalReturn = ((totalCapital - 10000) / 10000) * 100;
+        const avgWin = winningTrades.length > 0 ? winningTrades.reduce((sum, t) => sum + t.pnl, 0) / winningTrades.length : 0;
+        const avgLoss = losingTrades.length > 0 ? losingTrades.reduce((sum, t) => sum + t.pnl, 0) / losingTrades.length : 0;
+        
+        return {
+          trades,
+          chartData,
+          metrics: {
+            totalTrades: trades.length,
+            winningTrades: winningTrades.length,
+            losingTrades: losingTrades.length,
+            winRate,
+            totalReturn,
+            finalCapital: totalCapital,
+            avgWin,
+            avgLoss
+          }
+        };
+      };
+
+      useEffect(() => {
+        const fetchData = async () => {
+          setLoading(true);
+          try {
+            const response = await fetch(`https://bollingerboy.netlify.app/.netlify/functions/crypto-data?symbol=${coin}`);
+            const binanceData = await response.json();
+            
+            const historicalData = binanceData.map(candle => ({
+              timestamp: new Date(candle[0]),
+              close: parseFloat(candle[4])
+            }));
+            
+            setData(historicalData);
+            const backtestResults = runBacktest(historicalData);
+            setBacktest(backtestResults);
+          } catch (error) {
+            console.error('Error fetching data:', error);
+          } finally {
+            setLoading(false);
+          }
+        };
+        
+        fetchData();
+      }, [coin]);
+
+      if (loading) {
+        return (
+          <div className="min-h-screen bg-gray-900 text-white p-8 flex items-center justify-center">
+            <div className="text-center">
+              <Activity />
+              <p className="text-xl mt-4">Running backtest simulation...</p>
+            </div>
+          </div>
+        );
+      }
+
+      if (!backtest) {
+        return <div className="min-h-screen bg-gray-900 text-white p-8 flex items-center justify-center">
+          <p>Error loading data</p>
+        </div>;
+      }
+
+      const { metrics, trades, chartData } = backtest;
+
+      return (
+        <div className="min-h-screen bg-gray-900 text-white p-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="mb-8">
+              <h1 className="text-4xl font-bold mb-4">📊 Bollinger Bands Backtest</h1>
+              <p className="text-gray-400">Historical performance analysis with 10x leverage simulation</p>
+              
+              <div className="flex gap-4 mt-6">
+                {['BTC', 'ETH', 'SOL', 'ZEC'].map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setCoin(c)}
+                    className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+                      coin === c
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className={`p-6 rounded-xl ${metrics.totalReturn >= 0 ? 'bg-green-900/30 border-2 border-green-500' : 'bg-red-900/30 border-2 border-red-500'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Total Return</span>
+                  {metrics.totalReturn >= 0 ? <TrendingUp /> : <TrendingDown />}
+                </div>
+                <div className={`text-3xl font-bold ${metrics.totalReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {metrics.totalReturn >= 0 ? '+' : ''}{metrics.totalReturn.toFixed(2)}%
+                </div>
+                <div className="text-sm text-gray-400 mt-2">
+                  ${metrics.finalCapital.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                </div>
+              </div>
+
+              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Win Rate</span>
+                  <Percent />
+                </div>
+                <div className="text-3xl font-bold text-blue-500">
+                  {metrics.winRate.toFixed(1)}%
+                </div>
+                <div className="text-sm text-gray-400 mt-2">
+                  {metrics.winningTrades}W / {metrics.losingTrades}L
+                </div>
+              </div>
+
+              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Total Trades</span>
+                  <Activity />
+                </div>
+                <div className="text-3xl font-bold text-purple-500">
+                  {metrics.totalTrades}
+                </div>
+                <div className="text-sm text-gray-400 mt-2">
+                  Over {Math.round(data.length / 24)} days
+                </div>
+              </div>
+
+              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Avg Win/Loss</span>
+                  <DollarSign />
+                </div>
+                <div className="text-xl font-bold text-green-500">
+                  +${metrics.avgWin.toFixed(0)}
+                </div>
+                <div className="text-xl font-bold text-red-500">
+                  ${metrics.avgLoss.toFixed(0)}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-800 p-6 rounded-xl mb-8">
+              <h2 className="text-2xl font-bold mb-6">Price & Signals</h2>
+              <div className="overflow-x-auto">
+                <LineChart width={1100} height={400} data={chartData.slice(-200)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="index" stroke="#9CA3AF" />
+                  <YAxis stroke="#9CA3AF" domain={['auto', 'auto']} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    labelStyle={{ color: '#9CA3AF' }}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="upper" stroke="#EF4444" strokeWidth={1} dot={false} name="Upper Band" />
+                  <Line type="monotone" dataKey="middle" stroke="#3B82F6" strokeWidth={1} dot={false} name="Middle Band" />
+                  <Line type="monotone" dataKey="lower" stroke="#10B981" strokeWidth={1} dot={false} name="Lower Band" />
+                  <Line type="monotone" dataKey="price" stroke="#FFFFFF" strokeWidth={2} dot={false} name="Price" />
+                </LineChart>
+              </div>
+            </div>
+
+            <div className="bg-gray-800 p-6 rounded-xl">
+              <h2 className="text-2xl font-bold mb-6">Recent Trades (Last 10)</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-700">
+                      <th className="text-left p-3 text-gray-400">Date</th>
+                      <th className="text-left p-3 text-gray-400">Type</th>
+                      <th className="text-right p-3 text-gray-400">Entry</th>
+                      <th className="text-right p-3 text-gray-400">Exit</th>
+                      <th className="text-right p-3 text-gray-400">P&L</th>
+                      <th className="text-right p-3 text-gray-400">Return</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trades.slice(-10).reverse().map((trade, idx) => (
+                      <tr key={idx} className="border-b border-gray-700/50">
+                        <td className="p-3 text-gray-300">{trade.timestamp.toLocaleDateString()}</td>
+                        <td className="p-3">
+                          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                            trade.type === 'long' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
+                          }`}>
+                            {trade.type.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right text-gray-300">${trade.entry.toLocaleString()}</td>
+                        <td className="p-3 text-right text-gray-300">${trade.exit.toLocaleString()}</td>
+                        <td className={`p-3 text-right font-bold ${trade.pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}
+                        </td>
+                        <td className={`p-3 text-right font-bold ${trade.pnlPercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {trade.pnlPercent >= 0 ? '+' : ''}{trade.pnlPercent.toFixed(2)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="mt-8 bg-blue-900/20 border-2 border-blue-500 rounded-xl p-6">
+              <h3 className="text-xl font-bold mb-3">📋 Strategy Details</h3>
+              <ul className="space-y-2 text-gray-300">
+                <li>• <strong>Entry:</strong> STRONG BUY signal (price at 0-5% in band) → Open LONG</li>
+                <li>• <strong>Exit:</strong> STRONG SELL signal (price at 95-100% in band) → Close LONG, Open SHORT</li>
+                <li>• <strong>Leverage:</strong> 10x on all trades</li>
+                <li>• <strong>Starting Capital:</strong> $10,000</li>
+                <li>• <strong>Data:</strong> Last {Math.round(data.length / 24)} days of hourly candles</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<BollingerBacktest />);
+  </script>
+</body>
+</html>
