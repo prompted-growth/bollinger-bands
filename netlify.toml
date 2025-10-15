@@ -5,7 +5,3 @@
   from = "/*"
   to = "/index.html"
   status = 200
-
-[[functions]]
-  path = "/check-alerts"
-  schedule = "*/2 * * * *"
