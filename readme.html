@@ -3,1421 +3,737 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bollinger Bands Backtest</title>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <title>README - Bollinger Bands Backtest</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-  <div id="root"></div>
-  
-  <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+<body class="bg-gray-900 text-white">
+  <div class="min-h-screen p-8">
+    <div class="max-w-5xl mx-auto">
+      <!-- Header -->
+      <div class="mb-8">
+        <h1 class="text-5xl font-bold mb-4">📊 Bollinger Bands Backtest</h1>
+        <p class="text-xl text-gray-400">Complete Guide & Documentation</p>
+      </div>
 
-    const TrendingUp = () => (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
-        <polyline points="17 6 23 6 23 12"></polyline>
-      </svg>
-    );
+      <!-- Navigation -->
+      <div class="bg-gray-800 p-4 rounded-lg mb-8 border-2 border-blue-500">
+        <div class="flex gap-4">
+          <a href="index.html" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-all">
+            ← Back to Backtest
+          </a>
+        </div>
+      </div>
 
-    const TrendingDown = () => (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline>
-        <polyline points="17 18 23 18 23 12"></polyline>
-      </svg>
-    );
+      <!-- What is This? -->
+      <section class="bg-gray-800 p-8 rounded-xl mb-8 border-2 border-gray-700">
+        <h2 class="text-3xl font-bold mb-4 text-blue-400">🎯 What is This Tool?</h2>
+        <p class="text-gray-300 leading-relaxed mb-4">
+          This is an interactive backtesting tool that lets you test Bollinger Bands trading strategies using real historical cryptocurrency price data. It simulates what would have happened if you had traded using specific parameters over the past ~42 days.
+        </p>
+        <p class="text-gray-300 leading-relaxed">
+          <strong>Purpose:</strong> Learn how different strategy settings affect trading performance without risking real money. Understand the mechanics of algorithmic trading, leverage, and risk management.
+        </p>
+      </section>
 
-    const Percent = () => (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="19" y1="5" x2="5" y2="19"></line>
-        <circle cx="6.5" cy="6.5" r="2.5"></circle>
-        <circle cx="17.5" cy="17.5" r="2.5"></circle>
-      </svg>
-    );
+      <!-- What are Bollinger Bands? -->
+      <section class="bg-gray-800 p-8 rounded-xl mb-8 border-2 border-gray-700">
+        <h2 class="text-3xl font-bold mb-4 text-green-400">📈 What are Bollinger Bands?</h2>
+        <p class="text-gray-300 leading-relaxed mb-4">
+          Bollinger Bands are a technical analysis tool created by John Bollinger. They consist of three lines:
+        </p>
+        <ul class="space-y-3 mb-4">
+          <li class="flex items-start gap-3">
+            <span class="text-blue-400 font-bold">•</span>
+            <div>
+              <strong class="text-blue-400">Middle Band (SMA):</strong> Simple Moving Average of price over N periods (default: 20 hours)
+            </div>
+          </li>
+          <li class="flex items-start gap-3">
+            <span class="text-green-400 font-bold">•</span>
+            <div>
+              <strong class="text-green-400">Lower Band:</strong> SMA minus (Standard Deviation × 2)
+            </div>
+          </li>
+          <li class="flex items-start gap-3">
+            <span class="text-red-400 font-bold">•</span>
+            <div>
+              <strong class="text-red-400">Upper Band:</strong> SMA plus (Standard Deviation × 2)
+            </div>
+          </li>
+        </ul>
+        <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+          <p class="text-gray-300 leading-relaxed">
+            <strong>The Strategy:</strong> When price touches or crosses the lower band, it's considered "oversold" (potential buy signal). When price touches the upper band, it's "overbought" (potential sell signal). The bands expand during volatile periods and contract during calm periods.
+          </p>
+        </div>
+      </section>
 
-    const Activity = () => (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-      </svg>
-    );
-
-    const DollarSign = () => (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="12" y1="1" x2="12" y2="23"></line>
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-      </svg>
-    );
-
-    const AlertTriangle = () => (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-        <line x1="12" y1="9" x2="12" y2="13"></line>
-        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-      </svg>
-    );
-
-    function BollingerBacktest() {
-      const [coin, setCoin] = useState('BTC');
-      const [data, setData] = useState(null);
-      const [backtest, setBacktest] = useState(null);
-      const [loading, setLoading] = useState(true);
-      const chartRef = useRef(null);
-      const equityChartRef = useRef(null);
-      const chartInstance = useRef(null);
-      const equityChartInstance = useRef(null);
-
-      // Strategy Parameters
-      const [startingCapital, setStartingCapital] = useState(10000);
-      const [leverage, setLeverage] = useState(10);
-      const [period, setPeriod] = useState(20);
-      const [stdDev, setStdDev] = useState(2.0);
-      const [buyZone, setBuyZone] = useState(5);
-      const [sellZone, setSellZone] = useState(5);
-      const [stopLossEnabled, setStopLossEnabled] = useState(false);
-      const [stopLossPercent, setStopLossPercent] = useState(20);
-      const [dateRange, setDateRange] = useState('all');
-      const [positionSize, setPositionSize] = useState(100);
-      const [tradingFees, setTradingFees] = useState(0.1);
-      
-      // Signal visibility toggles
-      const [showStrongBuy, setShowStrongBuy] = useState(true);
-      const [showBuy, setShowBuy] = useState(false);
-      const [showConsiderBuy, setShowConsiderBuy] = useState(false);
-      const [showStrongSell, setShowStrongSell] = useState(true);
-      const [showSell, setShowSell] = useState(false);
-      const [showConsiderSell, setShowConsiderSell] = useState(false);
-
-      const calculateBollingerBands = (prices, customPeriod, customStdDev) => {
-        if (prices.length < customPeriod) return null;
+      <!-- Quick Start Guide -->
+      <section class="bg-gray-800 p-8 rounded-xl mb-8 border-2 border-purple-500">
+        <h2 class="text-3xl font-bold mb-6 text-purple-400">🚀 Quick Start Guide</h2>
         
-        const recentPrices = prices.slice(-customPeriod);
-        const sma = recentPrices.reduce((a, b) => a + b, 0) / customPeriod;
-        
-        const squaredDiffs = recentPrices.map(price => Math.pow(price - sma, 2));
-        const variance = squaredDiffs.reduce((a, b) => a + b, 0) / customPeriod;
-        const standardDeviation = Math.sqrt(variance);
-        
-        return {
-          upper: sma + (standardDeviation * customStdDev),
-          middle: sma,
-          lower: sma - (standardDeviation * customStdDev)
-        };
-      };
+        <div class="space-y-6">
+          <div>
+            <h3 class="text-xl font-bold mb-3 text-white">Step 1: Choose Your Coin</h3>
+            <p class="text-gray-300 mb-2">Click one of the coin buttons: <strong>BTC</strong>, <strong>ETH</strong>, <strong>SOL</strong>, or <strong>ZEC</strong></p>
+          </div>
 
-      const getPositionInBand = (price, bands) => {
-        if (!bands) return null;
-        return ((price - bands.lower) / (bands.upper - bands.lower)) * 100;
-      };
+          <div>
+            <h3 class="text-xl font-bold mb-3 text-white">Step 2: Select Date Range</h3>
+            <ul class="text-gray-300 space-y-2">
+              <li><strong>Last 7 Days:</strong> Test recent market conditions</li>
+              <li><strong>Last 14 Days:</strong> Medium-term view</li>
+              <li><strong>Last 30 Days:</strong> Monthly performance</li>
+              <li><strong>All Data (~42 days):</strong> Maximum history available</li>
+            </ul>
+          </div>
 
-      const getSignal = (position, customBuyZone, customSellZone) => {
-        if (position === null) return null;
-        if (position <= customBuyZone) return 'BUY';
-        if (position >= (100 - customSellZone)) return 'SELL';
-        return null;
-      };
-      
-      const getAllSignals = (position) => {
-        if (position === null) return [];
-        const signals = [];
-        
-        if (position <= 5) signals.push('STRONG_BUY');
-        else if (position > 5 && position <= 15) signals.push('BUY');
-        else if (position > 15 && position <= 35) signals.push('CONSIDER_BUY');
-        
-        if (position >= 95) signals.push('STRONG_SELL');
-        else if (position < 95 && position >= 85) signals.push('SELL');
-        else if (position < 85 && position >= 65) signals.push('CONSIDER_SELL');
-        
-        return signals;
-      };
-
-      const runBacktest = (historicalData, params) => {
-        let filteredData = historicalData;
-        const now = new Date(historicalData[historicalData.length - 1].timestamp);
-        
-        if (params.dateRange === '7d') {
-          const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          filteredData = historicalData.filter(d => d.timestamp >= cutoff);
-        } else if (params.dateRange === '14d') {
-          const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-          filteredData = historicalData.filter(d => d.timestamp >= cutoff);
-        } else if (params.dateRange === '30d') {
-          const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          filteredData = historicalData.filter(d => d.timestamp >= cutoff);
-        }
-        
-        const trades = [];
-        let position = null;
-        let entryPrice = 0;
-        let positionCapital = 0;
-        let availableCapital = params.startingCapital;
-        let totalCapital = params.startingCapital;
-        let peakCapital = params.startingCapital;
-        let maxDrawdown = 0;
-        let totalFees = 0;
-        
-        const chartData = [];
-        const signals = [];
-        const allSignalPoints = [];
-        const equityCurve = [];
-        
-        for (let i = params.period; i < filteredData.length; i++) {
-          const prices = filteredData.slice(0, i + 1).map(d => d.close);
-          const currentPrice = prices[prices.length - 1];
-          const bands = calculateBollingerBands(prices, params.period, params.stdDev);
-          const positionInBand = getPositionInBand(currentPrice, bands);
-          const signal = getSignal(positionInBand, params.buyZone, params.sellZone);
-          const allSignals = getAllSignals(positionInBand);
-          
-          chartData.push({
-            timestamp: filteredData[i].timestamp,
-            price: currentPrice,
-            upper: bands.upper,
-            middle: bands.middle,
-            lower: bands.lower,
-            positionInBand: positionInBand
-          });
-          
-          allSignals.forEach(sig => {
-            allSignalPoints.push({
-              index: i,
-              type: sig,
-              price: currentPrice,
-              timestamp: filteredData[i].timestamp
-            });
-          });
-          
-          let currentEquity = availableCapital;
-          if (position === 'long') {
-            const unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * positionCapital * params.leverage;
-            currentEquity = availableCapital + positionCapital + unrealizedPnL;
-          }
-          
-          equityCurve.push({
-            timestamp: filteredData[i].timestamp,
-            equity: currentEquity
-          });
-          
-          totalCapital = currentEquity;
-          
-          if (currentEquity > peakCapital) {
-            peakCapital = currentEquity;
-          }
-          const currentDrawdown = ((currentEquity - peakCapital) / peakCapital) * 100;
-          if (currentDrawdown < maxDrawdown) {
-            maxDrawdown = currentDrawdown;
-          }
-          
-          // LIQUIDATION LOGIC
-          if (position === 'long') {
-            const priceChangePercent = ((currentPrice - entryPrice) / entryPrice) * 100;
-            const leveragedLoss = priceChangePercent * params.leverage;
-            const liquidationThreshold = -90;
-            
-            if (leveragedLoss <= liquidationThreshold) {
-              const pnl = -positionCapital * 0.9;
-              availableCapital = availableCapital + positionCapital + pnl;
-              totalCapital = availableCapital;
-              
-              trades.push({
-                type: 'long',
-                entry: entryPrice,
-                exit: currentPrice,
-                exitReason: '💀 LIQUIDATED',
-                pnl: pnl,
-                pnlPercent: leveragedLoss,
-                fees: 0,
-                timestamp: filteredData[i].timestamp
-              });
-              
-              position = null;
-              positionCapital = 0;
-              
-              if (totalCapital <= 0) {
-                totalCapital = 0;
-                availableCapital = 0;
-                break;
-              }
-              continue;
-            }
-          }
-          
-          // Stop loss check
-          if (position === 'long' && params.stopLossEnabled) {
-            const currentLoss = ((currentPrice - entryPrice) / entryPrice) * 100;
-            if (currentLoss <= -params.stopLossPercent) {
-              const pnl = ((currentPrice - entryPrice) / entryPrice) * positionCapital * params.leverage;
-              const exitFee = Math.abs(positionCapital + pnl) * (params.tradingFees / 100);
-              totalFees += exitFee;
-              const netPnl = pnl - exitFee;
-              
-              availableCapital = availableCapital + positionCapital + netPnl;
-              totalCapital = availableCapital;
-              
-              trades.push({
-                type: 'long',
-                entry: entryPrice,
-                exit: currentPrice,
-                exitReason: 'Stop Loss',
-                pnl: netPnl,
-                pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage,
-                fees: exitFee,
-                timestamp: filteredData[i].timestamp
-              });
-              
-              position = null;
-              positionCapital = 0;
-              continue;
-            }
-          }
-          
-          // Entry signal
-          if (signal === 'BUY' && position === null && availableCapital > 0) {
-            position = 'long';
-            entryPrice = currentPrice;
-            positionCapital = availableCapital * (params.positionSize / 100);
-            
-            const entryFee = positionCapital * (params.tradingFees / 100);
-            totalFees += entryFee;
-            positionCapital -= entryFee;
-            availableCapital -= (availableCapital * (params.positionSize / 100));
-            
-            signals.push({ index: i, type: 'BUY', price: currentPrice });
-          } 
-          // Exit signal
-          else if (signal === 'SELL' && position === 'long') {
-            const pnl = ((currentPrice - entryPrice) / entryPrice) * positionCapital * params.leverage;
-            const exitFee = Math.abs(positionCapital + pnl) * (params.tradingFees / 100);
-            totalFees += exitFee;
-            const netPnl = pnl - exitFee;
-            
-            availableCapital = availableCapital + positionCapital + netPnl;
-            totalCapital = availableCapital;
-            
-            trades.push({
-              type: 'long',
-              entry: entryPrice,
-              exit: currentPrice,
-              exitReason: 'Signal',
-              pnl: netPnl,
-              pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage,
-              fees: exitFee,
-              timestamp: filteredData[i].timestamp
-            });
-            
-            position = null;
-            positionCapital = 0;
-            signals.push({ index: i, type: 'SELL', price: currentPrice });
-          }
-        }
-        
-        const winningTrades = trades.filter(t => t.pnl > 0);
-        const losingTrades = trades.filter(t => t.pnl < 0);
-        const winRate = trades.length > 0 ? (winningTrades.length / trades.length) * 100 : 0;
-        const totalReturn = ((totalCapital - params.startingCapital) / params.startingCapital) * 100;
-        const avgWin = winningTrades.length > 0 ? winningTrades.reduce((sum, t) => sum + t.pnl, 0) / winningTrades.length : 0;
-        const avgLoss = losingTrades.length > 0 ? losingTrades.reduce((sum, t) => sum + t.pnl, 0) / losingTrades.length : 0;
-        
-        const profitFactor = losingTrades.length > 0 
-          ? Math.abs(winningTrades.reduce((sum, t) => sum + t.pnl, 0)) / Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0))
-          : winningTrades.length > 0 ? Infinity : 0;
-        
-        // Calculate Sharpe Ratio
-        const returns = equityCurve.map((point, idx) => {
-          if (idx === 0) return 0;
-          return (point.equity - equityCurve[idx - 1].equity) / equityCurve[idx - 1].equity;
-        });
-        
-        const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
-        const stdReturn = Math.sqrt(
-          returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length
-        );
-        const sharpeRatio = stdReturn !== 0 ? (avgReturn / stdReturn) * Math.sqrt(8760) : 0;
-        
-        return {
-          trades,
-          chartData,
-          signals,
-          allSignalPoints,
-          equityCurve,
-          metrics: {
-            totalTrades: trades.length,
-            winningTrades: winningTrades.length,
-            losingTrades: losingTrades.length,
-            winRate,
-            totalReturn,
-            finalCapital: totalCapital,
-            avgWin,
-            avgLoss,
-            maxDrawdown: maxDrawdown,
-            peakCapital: peakCapital,
-            wasLiquidated: totalCapital === 0,
-            profitFactor: profitFactor,
-            sharpeRatio: sharpeRatio,
-            totalFees: totalFees
-          }
-        };
-      };
-
-      useEffect(() => {
-        const fetchData = async () => {
-          setLoading(true);
-          try {
-            const response = await fetch(`https://bollingerboy.netlify.app/.netlify/functions/crypto-data?symbol=${coin}`);
-            const binanceData = await response.json();
-            
-            const historicalData = binanceData.map(candle => ({
-              timestamp: new Date(candle[0]),
-              close: parseFloat(candle[4])
-            }));
-            
-            setData(historicalData);
-          } catch (error) {
-            console.error('Error fetching data:', error);
-          } finally {
-            setLoading(false);
-          }
-        };
-        
-        fetchData();
-      }, [coin]);
-
-      useEffect(() => {
-        if (!data) return;
-        
-        const params = {
-          startingCapital,
-          leverage,
-          period,
-          stdDev,
-          buyZone,
-          sellZone,
-          stopLossEnabled,
-          stopLossPercent,
-          dateRange,
-          positionSize,
-          tradingFees
-        };
-        
-        const backtestResults = runBacktest(data, params);
-        setBacktest(backtestResults);
-      }, [data, startingCapital, leverage, period, stdDev, buyZone, sellZone, stopLossEnabled, stopLossPercent, dateRange, positionSize, tradingFees]);
-
-      useEffect(() => {
-        if (!backtest || !chartRef.current) return;
-
-        if (chartInstance.current) {
-          chartInstance.current.destroy();
-        }
-
-        const ctx = chartRef.current.getContext('2d');
-        const displayData = backtest.chartData.slice(-200);
-
-        const visibleSignals = backtest.allSignalPoints.filter(s => {
-          if (s.type === 'STRONG_BUY' && showStrongBuy) return true;
-          if (s.type === 'BUY' && showBuy) return true;
-          if (s.type === 'CONSIDER_BUY' && showConsiderBuy) return true;
-          if (s.type === 'STRONG_SELL' && showStrongSell) return true;
-          if (s.type === 'SELL' && showSell) return true;
-          if (s.type === 'CONSIDER_SELL' && showConsiderSell) return true;
-          return false;
-        }).filter(s => s.index >= backtest.chartData.length - 200);
-
-        const strongBuySignals = visibleSignals
-          .filter(s => s.type === 'STRONG_BUY')
-          .map(s => ({
-            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
-            y: s.price
-          }));
-
-        const buySignals = visibleSignals
-          .filter(s => s.type === 'BUY')
-          .map(s => ({
-            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
-            y: s.price
-          }));
-
-        const considerBuySignals = visibleSignals
-          .filter(s => s.type === 'CONSIDER_BUY')
-          .map(s => ({
-            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
-            y: s.price
-          }));
-
-        const strongSellSignals = visibleSignals
-          .filter(s => s.type === 'STRONG_SELL')
-          .map(s => ({
-            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
-            y: s.price
-          }));
-
-        const sellSignals = visibleSignals
-          .filter(s => s.type === 'SELL')
-          .map(s => ({
-            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
-            y: s.price
-          }));
-
-        const considerSellSignals = visibleSignals
-          .filter(s => s.type === 'CONSIDER_SELL')
-          .map(s => ({
-            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
-            y: s.price
-          }));
-
-        const datasets = [
-          {
-            label: 'Price',
-            data: displayData.map(d => d.price),
-            borderColor: '#FFFFFF',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            pointRadius: 0,
-            order: 2
-          },
-          {
-            label: 'Upper Band',
-            data: displayData.map(d => d.upper),
-            borderColor: '#EF4444',
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-            fill: '+1',
-            borderWidth: 1,
-            borderDash: [5, 5],
-            pointRadius: 0,
-            order: 3
-          },
-          {
-            label: 'Middle Band',
-            data: displayData.map(d => d.middle),
-            borderColor: '#3B82F6',
-            backgroundColor: 'transparent',
-            borderWidth: 1,
-            pointRadius: 0,
-            order: 4
-          },
-          {
-            label: 'Lower Band',
-            data: displayData.map(d => d.lower),
-            borderColor: '#10B981',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            fill: 'origin',
-            borderWidth: 1,
-            borderDash: [5, 5],
-            pointRadius: 0,
-            order: 5
-          }
-        ];
-
-        if (strongBuySignals.length > 0) {
-          datasets.push({
-            label: '🟢 STRONG BUY',
-            data: strongBuySignals,
-            type: 'scatter',
-            backgroundColor: '#10B981',
-            borderColor: '#FFFFFF',
-            borderWidth: 3,
-            pointRadius: 10,
-            pointHoverRadius: 12,
-            order: 1
-          });
-        }
-
-        if (buySignals.length > 0) {
-          datasets.push({
-            label: '🟢 BUY',
-            data: buySignals,
-            type: 'scatter',
-            backgroundColor: '#34D399',
-            borderColor: '#FFFFFF',
-            borderWidth: 2,
-            pointRadius: 7,
-            pointHoverRadius: 9,
-            order: 1
-          });
-        }
-
-        if (considerBuySignals.length > 0) {
-          datasets.push({
-            label: '🔵 CONSIDER BUY',
-            data: considerBuySignals,
-            type: 'scatter',
-            backgroundColor: '#3B82F6',
-            borderColor: '#FFFFFF',
-            borderWidth: 1,
-            pointRadius: 5,
-            pointHoverRadius: 7,
-            order: 1
-          });
-        }
-
-        if (strongSellSignals.length > 0) {
-          datasets.push({
-            label: '🔴 STRONG SELL',
-            data: strongSellSignals,
-            type: 'scatter',
-            backgroundColor: '#EF4444',
-            borderColor: '#FFFFFF',
-            borderWidth: 3,
-            pointRadius: 10,
-            pointHoverRadius: 12,
-            order: 1
-          });
-        }
-
-        if (sellSignals.length > 0) {
-          datasets.push({
-            label: '🔴 SELL',
-            data: sellSignals,
-            type: 'scatter',
-            backgroundColor: '#F87171',
-            borderColor: '#FFFFFF',
-            borderWidth: 2,
-            pointRadius: 7,
-            pointHoverRadius: 9,
-            order: 1
-          });
-        }
-
-        if (considerSellSignals.length > 0) {
-          datasets.push({
-            label: '🟡 CONSIDER SELL',
-            data: considerSellSignals,
-            type: 'scatter',
-            backgroundColor: '#FBBF24',
-            borderColor: '#FFFFFF',
-            borderWidth: 1,
-            pointRadius: 5,
-            pointHoverRadius: 7,
-            order: 1
-          });
-        }
-
-        chartInstance.current = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: displayData.map((d, i) => i),
-            datasets: datasets
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                labels: {
-                  color: '#9CA3AF'
-                }
-              },
-              tooltip: {
-                callbacks: {
-                  title: function(context) {
-                    const index = context[0].dataIndex;
-                    return displayData[index]?.timestamp.toLocaleString() || '';
-                  }
-                }
-              }
-            },
-            scales: {
-              x: {
-                ticks: {
-                  color: '#9CA3AF',
-                  maxTicksLimit: 10
-                },
-                grid: {
-                  color: '#374151'
-                }
-              },
-              y: {
-                ticks: {
-                  color: '#9CA3AF'
-                },
-                grid: {
-                  color: '#374151'
-                }
-              }
-            }
-          }
-        });
-
-        return () => {
-          if (chartInstance.current) {
-            chartInstance.current.destroy();
-          }
-        };
-      }, [backtest, data, showStrongBuy, showBuy, showConsiderBuy, showStrongSell, showSell, showConsiderSell]);
-
-      // Equity curve chart
-      useEffect(() => {
-        if (!backtest || !equityChartRef.current) return;
-
-        if (equityChartInstance.current) {
-          equityChartInstance.current.destroy();
-        }
-
-        const ctx = equityChartRef.current.getContext('2d');
-        const equityData = backtest.equityCurve;
-
-        equityChartInstance.current = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: equityData.map((d, i) => i),
-            datasets: [
-              {
-                label: 'Account Value',
-                data: equityData.map(d => d.equity),
-                borderColor: backtest.metrics.totalReturn >= 0 ? '#10B981' : '#EF4444',
-                backgroundColor: backtest.metrics.totalReturn >= 0 
-                  ? 'rgba(16, 185, 129, 0.1)' 
-                  : 'rgba(239, 68, 68, 0.1)',
-                fill: true,
-                borderWidth: 2,
-                pointRadius: 0,
-                tension: 0.1
-              },
-              {
-                label: 'Starting Capital',
-                data: equityData.map(() => startingCapital),
-                borderColor: '#3B82F6',
-                backgroundColor: 'transparent',
-                borderWidth: 1,
-                borderDash: [5, 5],
-                pointRadius: 0
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                labels: {
-                  color: '#9CA3AF'
-                }
-              },
-              tooltip: {
-                callbacks: {
-                  title: function(context) {
-                    const index = context[0].dataIndex;
-                    return equityData[index]?.timestamp.toLocaleString() || '';
-                  },
-                  label: function(context) {
-                    return `$${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                  }
-                }
-              }
-            },
-            scales: {
-              x: {
-                ticks: {
-                  color: '#9CA3AF',
-                  maxTicksLimit: 10
-                },
-                grid: {
-                  color: '#374151'
-                }
-              },
-              y: {
-                ticks: {
-                  color: '#9CA3AF',
-                  callback: function(value) {
-                    return '$' + value.toLocaleString();
-                  }
-                },
-                grid: {
-                  color: '#374151'
-                }
-              }
-            }
-          }
-        });
-
-        return () => {
-          if (equityChartInstance.current) {
-            equityChartInstance.current.destroy();
-          }
-        };
-      }, [backtest, startingCapital]);
-
-      if (loading) {
-        return (
-          <div className="min-h-screen bg-gray-900 text-white p-8 flex items-center justify-center">
-            <div className="text-center">
-              <Activity />
-              <p className="text-xl mt-4">Loading data...</p>
+          <div>
+            <h3 class="text-xl font-bold mb-3 text-white">Step 3: Adjust Strategy Settings</h3>
+            <div class="bg-gray-900 p-4 rounded-lg space-y-3">
+              <div>
+                <p class="font-semibold text-green-400">Starting Capital</p>
+                <p class="text-sm text-gray-400">How much money you're starting with (e.g., $10,000)</p>
+              </div>
+              <div>
+                <p class="font-semibold text-blue-400">Leverage</p>
+                <p class="text-sm text-gray-400">Multiplies your position size and risk:</p>
+                <ul class="text-xs text-gray-400 ml-4 mt-1 space-y-1">
+                  <li>• 5x = Conservative (2.5% loss wipes you out at -90%)</li>
+                  <li>• 10x = Moderate (9% loss wipes you out)</li>
+                  <li>• 20x = Aggressive (4.5% loss wipes you out)</li>
+                  <li>• 40x = Extreme (2.25% loss wipes you out)</li>
+                </ul>
+              </div>
             </div>
           </div>
-        );
-      }
 
-      if (!backtest) {
-        return <div className="min-h-screen bg-gray-900 text-white p-8 flex items-center justify-center">
-          <p>Error loading data</p>
-        </div>;
-      }
+          <div>
+            <h3 class="text-xl font-bold mb-3 text-white">Step 4: Review Results</h3>
+            <p class="text-gray-300 mb-2">Watch these key metrics:</p>
+            <ul class="text-gray-300 space-y-2">
+              <li><strong class="text-green-400">Total Return:</strong> Overall profit/loss percentage</li>
+              <li><strong class="text-blue-400">Win Rate:</strong> Percentage of profitable trades</li>
+              <li><strong class="text-yellow-400">Max Drawdown:</strong> Largest peak-to-trough decline (risk indicator)</li>
+              <li><strong class="text-purple-400">Profit Factor:</strong> How much you make per dollar lost (>1.5 is good)</li>
+            </ul>
+          </div>
+        </div>
+      </section>
 
-      const { metrics, trades } = backtest;
+      <!-- Parameter Explanations -->
+      <section class="bg-gray-800 p-8 rounded-xl mb-8 border-2 border-gray-700">
+        <h2 class="text-3xl font-bold mb-6 text-yellow-400">⚙️ Strategy Parameters Explained</h2>
+        
+        <div class="space-y-6">
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-blue-400">Period (10-30)</h3>
+            <p class="text-gray-300 mb-2">Number of hours used to calculate the moving average and standard deviation.</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>Lower (10-15):</strong> More sensitive, reacts quickly to price changes, more signals</li>
+              <li>• <strong>Higher (25-30):</strong> More stable, filters out noise, fewer but potentially stronger signals</li>
+              <li>• <strong>Recommended:</strong> Start with 20 (standard default)</li>
+            </ul>
+          </div>
 
-      return (
-        <div className="min-h-screen bg-gray-900 text-white p-8">
-          <div className="max-w-7xl mx-auto">
-            <div class="mb-8">
-              <h1 class="text-4xl font-bold mb-4">📊 Bollinger Bands Backtest</h1>
-              <p class="text-gray-400">Interactive historical performance analysis</p>
-              
-              <div class="flex gap-4 mt-6 flex-wrap">
-                <div className="flex gap-4">
-                  {['BTC', 'ETH', 'SOL', 'ZEC'].map(c => (
-                    <button
-                      key={c}
-                      onClick={() => setCoin(c)}
-                      className={`px-6 py-3 rounded-lg font-semibold transition-all ${
-                        coin === c
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-                <a 
-                  href="readme.html" 
-                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold transition-all"
-                >
-                  📖 READ ME - Full Guide
-                </a>
-              </div>
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-blue-400">Standard Deviation (1.5-3.0)</h3>
+            <p class="text-gray-300 mb-2">Controls the width of the bands.</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>Lower (1.5):</strong> Tighter bands, more signals, price touches bands more often</li>
+              <li>• <strong>Higher (3.0):</strong> Wider bands, fewer signals, only extreme price movements trigger</li>
+              <li>• <strong>Recommended:</strong> 2.0 (standard default)</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-green-400">Buy Zone (3-10%)</h3>
+            <p class="text-gray-300 mb-2">Position within the bands that triggers a BUY signal (from bottom).</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>5%:</strong> Wait for strong oversold signal (price very close to lower band)</li>
+              <li>• <strong>10%:</strong> Enter earlier when price approaches lower band</li>
+              <li>• <strong>Recommended:</strong> 5% for quality signals</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-red-400">Sell Zone (3-10%)</h3>
+            <p class="text-gray-300 mb-2">Position within the bands that triggers a SELL signal (from top).</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>5%:</strong> Wait for strong overbought signal (95-100% range)</li>
+              <li>• <strong>10%:</strong> Exit earlier (90-100% range)</li>
+              <li>• <strong>Recommended:</strong> 5% for quality exits</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-red-700">
+            <h3 class="text-lg font-bold mb-2 text-red-400">Stop Loss (-10% to -30%)</h3>
+            <p class="text-gray-300 mb-2">Automatically exits a trade if it loses this percentage (before leverage).</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>-10%:</strong> Tight stop, cuts losses quickly but may exit good trades early</li>
+              <li>• <strong>-20%:</strong> Balanced protection</li>
+              <li>• <strong>-30%:</strong> Loose stop, gives trades room but risks larger losses</li>
+              <li>• <strong>Recommended:</strong> Use -15% to -20% for balance</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-orange-700">
+            <h3 class="text-lg font-bold mb-2 text-orange-400">Position Size (10-100%)</h3>
+            <p class="text-gray-300 mb-2">Percentage of available capital to use per trade.</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>10-25%:</strong> Conservative, allows multiple positions and better risk management</li>
+              <li>• <strong>50%:</strong> Moderate exposure</li>
+              <li>• <strong>100%:</strong> All-in on every trade (very risky, not recommended for real trading)</li>
+              <li>• <strong>Recommended:</strong> 20-25% for realistic testing</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-orange-400">Trading Fees (0-0.2%)</h3>
+            <p class="text-gray-300 mb-2">Fee charged on both entry and exit of each trade.</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>0.05%:</strong> Low fees (maker rebates on some exchanges)</li>
+              <li>• <strong>0.1%:</strong> Standard exchange fees (most realistic)</li>
+              <li>• <strong>0.2%:</strong> Higher fees (some exchanges or during high volatility)</li>
+              <li>• <strong>Recommended:</strong> 0.1% for realistic simulation</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Understanding Metrics -->
+      <section class="bg-gray-800 p-8 rounded-xl mb-8 border-2 border-gray-700">
+        <h2 class="text-3xl font-bold mb-6 text-cyan-400">📊 Understanding the Metrics</h2>
+        
+        <div class="space-y-6">
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-green-400">Total Return</h3>
+            <p class="text-gray-300 mb-2">Overall percentage gain or loss on your starting capital.</p>
+            <p class="text-sm text-gray-400">Example: Start with $10,000, end with $12,000 = +20% return</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-blue-400">Win Rate</h3>
+            <p class="text-gray-300 mb-2">Percentage of trades that were profitable.</p>
+            <p class="text-sm text-gray-400"><strong>Note:</strong> A 40% win rate can still be profitable if wins are larger than losses!</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-yellow-400">Max Drawdown</h3>
+            <p class="text-gray-300 mb-2">Largest peak-to-trough decline in account value.</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>-10% to -20%:</strong> Acceptable for most strategies</li>
+              <li>• <strong>-20% to -40%:</strong> Significant risk, stressful to trade</li>
+              <li>• <strong>-40%+:</strong> Very high risk, hard to recover from</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-purple-400">Profit Factor</h3>
+            <p class="text-gray-300 mb-2">Total winnings divided by total losses.</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>&lt;1.0:</strong> Losing strategy (losses exceed wins)</li>
+              <li>• <strong>1.0-1.5:</strong> Marginally profitable</li>
+              <li>• <strong>1.5-2.0:</strong> Good strategy</li>
+              <li>• <strong>2.0+:</strong> Excellent strategy</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-cyan-400">Sharpe Ratio</h3>
+            <p class="text-gray-300 mb-2">Risk-adjusted return measure (higher is better).</p>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <li>• <strong>&lt;0:</strong> Strategy loses money</li>
+              <li>• <strong>0-1:</strong> Returns don't justify the risk</li>
+              <li>• <strong>1-2:</strong> Good risk-adjusted returns</li>
+              <li>• <strong>2+:</strong> Excellent risk-adjusted returns</li>
+            </ul>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-gray-700">
+            <h3 class="text-lg font-bold mb-2 text-red-400">Liquidation (💀)</h3>
+            <p class="text-gray-300 mb-2">When your leveraged position loses 90% or more, exchanges automatically close it to protect their funds.</p>
+            <p class="text-sm text-gray-400"><strong>Example:</strong> With 10x leverage, a 9% price drop against you = liquidation</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Signal Types -->
+      <section class="bg-gray-800 p-8 rounded-xl mb-8 border-2 border-gray-700">
+        <h2 class="text-3xl font-bold mb-6 text-indigo-400">🎯 Signal Types on Chart</h2>
+        
+        <div class="space-y-4">
+          <div class="bg-gray-900 p-4 rounded-lg border-l-4 border-green-500">
+            <h3 class="font-bold text-green-400 mb-2">🟢 STRONG BUY (0-5%)</h3>
+            <p class="text-sm text-gray-300">Price is at or very near the lower band. Strongest oversold signal.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border-l-4 border-green-400">
+            <h3 class="font-bold text-green-300 mb-2">🟢 BUY (5-15%)</h3>
+            <p class="text-sm text-gray-300">Price is approaching the lower band. Moderate oversold signal.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border-l-4 border-blue-500">
+            <h3 class="font-bold text-blue-400 mb-2">🔵 CONSIDER BUY (15-35%)</h3>
+            <p class="text-sm text-gray-300">Price is in lower third of bands. Weak signal, might move lower.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border-l-4 border-red-500">
+            <h3 class="font-bold text-red-400 mb-2">🔴 STRONG SELL (95-100%)</h3>
+            <p class="text-sm text-gray-300">Price is at or very near the upper band. Strongest overbought signal.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border-l-4 border-red-400">
+            <h3 class="font-bold text-red-300 mb-2">🔴 SELL (85-95%)</h3>
+            <p class="text-sm text-gray-300">Price is approaching the upper band. Moderate overbought signal.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border-l-4 border-yellow-500">
+            <h3 class="font-bold text-yellow-400 mb-2">🟡 CONSIDER SELL (65-85%)</h3>
+            <p class="text-sm text-gray-300">Price is in upper third of bands. Weak signal, might move higher.</p>
+          </div>
+        </div>
+
+        <div class="mt-6 bg-blue-900/30 p-4 rounded-lg border border-blue-500">
+          <p class="text-sm text-gray-300">
+            💡 <strong>Tip:</strong> Toggle signal visibility on the chart to focus on specific signal strengths. "Strong Only" mode shows just STRONG BUY and STRONG SELL signals for clearer visualization.
+          </p>
+        </div>
+      </section>
+
+      <!-- Tips for Success -->
+      <section class="bg-gray-800 p-8 rounded-xl mb-8 border-2 border-green-500">
+        <h2 class="text-3xl font-bold mb-6 text-green-400">💡 Tips for Effective Backtesting</h2>
+        
+        <div class="space-y-4">
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">1️⃣</span>
+            <div>
+              <h3 class="font-bold text-white mb-1">Start Conservative</h3>
+              <p class="text-sm text-gray-300">Begin with low leverage (5x), stop losses enabled, and 25% position sizing to understand the strategy.</p>
             </div>
+          </div>
 
-            {/* Position Sizing Notice */}
-            {positionSize === 100 && (
-              <div className="bg-yellow-900/30 border-2 border-yellow-500 p-4 rounded-lg mb-6">
-                <p className="text-sm text-yellow-200">
-                  💡 <strong>Note:</strong> You're using 100% of capital per trade. Real traders typically use 10-25% position sizing for better risk management. Adjust below in Advanced Settings.
-                </p>
-              </div>
-            )}
-
-            {/* Settings Panel */}
-            <div className="bg-gray-800 p-6 rounded-xl mb-8 border-2 border-blue-500">
-              <h2 className="text-2xl font-bold mb-6">⚙️ Strategy Settings</h2>
-              
-              {/* Date Range Selector */}
-              <div className="mb-6 pb-6 border-b border-gray-700">
-                <label className="block text-gray-400 mb-3 font-semibold">📅 Date Range</label>
-                <div className="flex gap-2">
-                  {[
-                    { value: '7d', label: 'Last 7 Days' },
-                    { value: '14d', label: 'Last 14 Days' },
-                    { value: '30d', label: 'Last 30 Days' },
-                    { value: 'all', label: 'All Data (~42 days)' }
-                  ].map(range => (
-                    <button
-                      key={range.value}
-                      onClick={() => setDateRange(range.value)}
-                      className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all ${
-                        dateRange === range.value
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                      }`}
-                    >
-                      {range.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Starting Capital */}
-                <div>
-                  <label className="block text-gray-400 mb-2">Starting Capital</label>
-                  <input
-                    type="number"
-                    value={startingCapital}
-                    onChange={(e) => setStartingCapital(Number(e.target.value))}
-                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
-                    placeholder="10000"
-                  />
-                </div>
-
-                {/* Leverage */}
-                <div>
-                  <label className="block text-gray-400 mb-2">Leverage</label>
-                  <div className="flex gap-2">
-                    {[5, 10, 20, 40].map(lev => (
-                      <button
-                        key={lev}
-                        onClick={() => setLeverage(lev)}
-                        className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all ${
-                          leverage === lev
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        }`}
-                      >
-                        {lev}x
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Period */}
-                <div>
-                  <label className="block text-gray-400 mb-2">Period: {period}</label>
-                  <input
-                    type="range"
-                    min="10"
-                    max="30"
-                    step="5"
-                    value={period}
-                    onChange={(e) => setPeriod(Number(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>10</span>
-                    <span>15</span>
-                    <span>20</span>
-                    <span>25</span>
-                    <span>30</span>
-                  </div>
-                </div>
-
-                {/* Std Dev */}
-                <div>
-                  <label className="block text-gray-400 mb-2">Std Dev: {stdDev.toFixed(1)}</label>
-                  <input
-                    type="range"
-                    min="1.5"
-                    max="3.0"
-                    step="0.5"
-                    value={stdDev}
-                    onChange={(e) => setStdDev(Number(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>1.5</span>
-                    <span>2.0</span>
-                    <span>2.5</span>
-                    <span>3.0</span>
-                  </div>
-                </div>
-
-                {/* Buy Zone */}
-                <div>
-                  <label className="block text-gray-400 mb-2">Buy Zone (0-{buyZone}%)</label>
-                  <input
-                    type="range"
-                    min="3"
-                    max="10"
-                    step="1"
-                    value={buyZone}
-                    onChange={(e) => setBuyZone(Number(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>3%</span>
-                    <span>5%</span>
-                    <span>10%</span>
-                  </div>
-                </div>
-
-                {/* Sell Zone */}
-                <div>
-                  <label className="block text-gray-400 mb-2">Sell Zone ({100-sellZone}-100%)</label>
-                  <input
-                    type="range"
-                    min="3"
-                    max="10"
-                    step="1"
-                    value={sellZone}
-                    onChange={(e) => setSellZone(Number(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>90%</span>
-                    <span>95%</span>
-                    <span>97%</span>
-                  </div>
-                </div>
-
-                {/* Stop Loss */}
-                <div className="md:col-span-2">
-                  <label className="flex items-center text-gray-400 mb-2">
-                    <input
-                      type="checkbox"
-                      checked={stopLossEnabled}
-                      onChange={(e) => setStopLossEnabled(e.target.checked)}
-                      className="mr-2 w-5 h-5"
-                    />
-                    Enable Stop Loss
-                  </label>
-                  {stopLossEnabled && (
-                    <div className="mt-4">
-                      <label className="block text-gray-400 mb-2">Stop Loss: -{stopLossPercent}%</label>
-                      <div className="flex gap-2">
-                        {[10, 15, 20, 30].map(sl => (
-                          <button
-                            key={sl}
-                            onClick={() => setStopLossPercent(sl)}
-                            className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all ${
-                              stopLossPercent === sl
-                                ? 'bg-red-600 text-white'
-                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            }`}
-                          >
-                            -{sl}%
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Advanced Settings */}
-              <details className="mt-6 pt-6 border-t border-gray-700">
-                <summary className="cursor-pointer text-lg font-semibold text-blue-400 hover:text-blue-300">
-                  ⚙️ Advanced Settings
-                </summary>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Position Size */}
-                  <div>
-                    <label className="block text-gray-400 mb-2">Position Size: {positionSize}%</label>
-                    <input
-                      type="range"
-                      min="10"
-                      max="100"
-                      step="10"
-                      value={positionSize}
-                      onChange={(e) => setPositionSize(Number(e.target.value))}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-gray-500 mt-1">
-                      <span>10%</span>
-                      <span>25%</span>
-                      <span>50%</span>
-                      <span>75%</span>
-                      <span>100%</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      Percentage of available capital to use per trade
-                    </p>
-                  </div>
-
-                  {/* Trading Fees */}
-                  <div>
-                    <label className="block text-gray-400 mb-2">Trading Fees: {tradingFees}%</label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="0.2"
-                      step="0.05"
-                      value={tradingFees}
-                      onChange={(e) => setTradingFees(Number(e.target.value))}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-gray-500 mt-1">
-                      <span>0%</span>
-                      <span>0.05%</span>
-                      <span>0.1%</span>
-                      <span>0.15%</span>
-                      <span>0.2%</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      Fee per trade (both entry and exit)
-                    </p>
-                  </div>
-                </div>
-              </details>
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">2️⃣</span>
+            <div>
+              <h3 class="font-bold text-white mb-1">Test Multiple Time Periods</h3>
+              <p class="text-sm text-gray-300">A strategy that works in 7 days might fail over 30 days. Test all date ranges to see consistency.</p>
             </div>
+          </div>
 
-            {/* Metrics Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
-              <div className={`p-6 rounded-xl ${
-                metrics.wasLiquidated 
-                  ? 'bg-red-900/50 border-2 border-red-500'
-                  : metrics.totalReturn >= 0 
-                    ? 'bg-green-900/30 border-2 border-green-500' 
-                    : 'bg-red-900/30 border-2 border-red-500'
-              }`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400">Total Return</span>
-                  {metrics.wasLiquidated ? (
-                    <span className="text-2xl">💀</span>
-                  ) : metrics.totalReturn >= 0 ? (
-                    <TrendingUp />
-                  ) : (
-                    <TrendingDown />
-                  )}
-                </div>
-                {metrics.wasLiquidated ? (
-                  <>
-                    <div className="text-3xl font-bold text-red-500">LIQUIDATED</div>
-                    <div className="text-sm text-red-400 mt-2">Account Wiped Out</div>
-                  </>
-                ) : (
-                  <>
-                    <div className={`text-3xl font-bold ${metrics.totalReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {metrics.totalReturn >= 0 ? '+' : ''}{metrics.totalReturn.toFixed(2)}%
-                    </div>
-                    <div className="text-sm text-gray-400 mt-2">
-                      ${metrics.finalCapital.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400">Win Rate</span>
-                  <Percent />
-                </div>
-                <div className="text-3xl font-bold text-blue-500">
-                  {metrics.winRate.toFixed(1)}%
-                </div>
-                <div className="text-sm text-gray-400 mt-2">
-                  {metrics.winningTrades}W / {metrics.losingTrades}L
-                </div>
-              </div>
-
-              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400">Total Trades</span>
-                  <Activity />
-                </div>
-                <div className="text-3xl font-bold text-purple-500">
-                  {metrics.totalTrades}
-                </div>
-                <div className="text-sm text-gray-400 mt-2">
-                  Over {Math.round(data.length / 24)} days
-                </div>
-              </div>
-
-              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400">Avg Win/Loss</span>
-                  <DollarSign />
-                </div>
-                <div className="text-xl font-bold text-green-500">
-                  +${metrics.avgWin.toFixed(0)}
-                </div>
-                <div className="text-xl font-bold text-red-500">
-                  ${metrics.avgLoss.toFixed(0)}
-                </div>
-              </div>
-
-              <div className={`p-6 rounded-xl border-2 ${
-                metrics.maxDrawdown < -50 
-                  ? 'bg-red-900/30 border-red-500'
-                  : metrics.maxDrawdown < -25
-                    ? 'bg-yellow-900/30 border-yellow-500'
-                    : 'bg-gray-800 border-gray-700'
-              }`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400">Max Drawdown</span>
-                  <TrendingDown />
-                </div>
-                <div className={`text-3xl font-bold ${
-                  metrics.maxDrawdown < -50 
-                    ? 'text-red-500'
-                    : metrics.maxDrawdown < -25
-                      ? 'text-yellow-500'
-                      : 'text-gray-300'
-                }`}>
-                  {metrics.maxDrawdown.toFixed(2)}%
-                </div>
-                <div className="text-sm text-gray-400 mt-2">
-                  Peak: ${metrics.peakCapital.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}
-                </div>
-              </div>
-
-              <div className={`p-6 rounded-xl border-2 ${
-                metrics.profitFactor >= 2 
-                  ? 'bg-green-900/30 border-green-500'
-                  : metrics.profitFactor >= 1
-                    ? 'bg-gray-800 border-gray-700'
-                    : 'bg-red-900/30 border-red-500'
-              }`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400 text-sm">Profit Factor</span>
-                  <DollarSign />
-                </div>
-                <div className={`text-3xl font-bold ${
-                  metrics.profitFactor >= 2 
-                    ? 'text-green-500'
-                    : metrics.profitFactor >= 1
-                      ? 'text-gray-300'
-                      : 'text-red-500'
-                }`}>
-                  {metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)}
-                </div>
-                <div className="text-xs text-gray-400 mt-2">
-                  {metrics.profitFactor >= 1.5 ? 'Excellent' : metrics.profitFactor >= 1 ? 'Good' : 'Poor'}
-                </div>
-              </div>
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">3️⃣</span>
+            <div>
+              <h3 class="font-bold text-white mb-1">Watch the Equity Curve</h3>
+              <p class="text-sm text-gray-300">A smooth upward curve is better than wild swings, even if final returns are similar.</p>
             </div>
+          </div>
 
-            {/* Additional Metrics Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400">Sharpe Ratio</span>
-                  <Activity />
-                </div>
-                <div className={`text-3xl font-bold ${
-                  metrics.sharpeRatio >= 2 
-                    ? 'text-green-500'
-                    : metrics.sharpeRatio >= 1
-                      ? 'text-blue-500'
-                      : 'text-gray-300'
-                }`}>
-                  {metrics.sharpeRatio.toFixed(2)}
-                </div>
-                <div className="text-xs text-gray-400 mt-2">
-                  {metrics.sharpeRatio >= 2 ? 'Excellent' : metrics.sharpeRatio >= 1 ? 'Good' : metrics.sharpeRatio >= 0 ? 'Fair' : 'Poor'} risk-adjusted returns
-                </div>
-              </div>
-
-              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400">Total Fees Paid</span>
-                  <DollarSign />
-                </div>
-                <div className="text-3xl font-bold text-orange-500">
-                  ${metrics.totalFees.toFixed(2)}
-                </div>
-                <div className="text-xs text-gray-400 mt-2">
-                  {((metrics.totalFees / startingCapital) * 100).toFixed(2)}% of starting capital
-                </div>
-              </div>
-
-              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-400">Avg Trade Duration</span>
-                  <Activity />
-                </div>
-                <div className="text-3xl font-bold text-purple-500">
-                  {trades.length > 1 ? Math.round((backtest.chartData.length / trades.length)) : 0}h
-                </div>
-                <div className="text-xs text-gray-400 mt-2">
-                  Average hours per trade
-                </div>
-              </div>
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">4️⃣</span>
+            <div>
+              <h3 class="font-bold text-white mb-1">Consider All Metrics Together</h3>
+              <p class="text-sm text-gray-300">High returns with huge drawdowns are risky. Look for balance: decent returns + low drawdown + good Sharpe ratio.</p>
             </div>
+          </div>
 
-            {/* Equity Curve Chart */}
-            <div className="bg-gray-800 p-6 rounded-xl mb-8">
-              <h2 className="text-2xl font-bold mb-4">💰 Account Value Over Time</h2>
-              <div style={{ height: '400px' }}>
-                <canvas ref={equityChartRef}></canvas>
-              </div>
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">5️⃣</span>
+            <div>
+              <h3 class="font-bold text-white mb-1">Understand Market Conditions</h3>
+              <p class="text-sm text-gray-300">Trending markets and ranging markets require different strategies. Bollinger Bands work best in ranging conditions.</p>
             </div>
+          </div>
 
-            {/* Price Chart */}
-            <div className="bg-gray-800 p-6 rounded-xl mb-8">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">Price & Signals (Last 200 Hours)</h2>
-              </div>
-              
-              {/* Signal Toggles */}
-              <div className="mb-6 p-4 bg-gray-900 rounded-lg">
-                <h3 className="text-sm font-semibold text-gray-400 mb-3">📍 Show Signals on Chart:</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showStrongBuy}
-                      onChange={(e) => setShowStrongBuy(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">🟢 <strong>STRONG BUY</strong> (0-5%)</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showBuy}
-                      onChange={(e) => setShowBuy(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">🟢 BUY (5-15%)</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showConsiderBuy}
-                      onChange={(e) => setShowConsiderBuy(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">🔵 Consider Buy (15-35%)</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showStrongSell}
-                      onChange={(e) => setShowStrongSell(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">🔴 <strong>STRONG SELL</strong> (95-100%)</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showSell}
-                      onChange={(e) => setShowSell(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">🔴 SELL (85-95%)</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showConsiderSell}
-                      onChange={(e) => setShowConsiderSell(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">🟡 Consider Sell (65-85%)</span>
-                  </label>
-                </div>
-                
-                <div className="mt-3 flex gap-2">
-                  <button
-                    onClick={() => {
-                      setShowStrongBuy(true);
-                      setShowBuy(true);
-                      setShowConsiderBuy(true);
-                      setShowStrongSell(true);
-                      setShowSell(true);
-                      setShowConsiderSell(true);
-                    }}
-                    className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded"
-                  >
-                    Show All
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowStrongBuy(false);
-                      setShowBuy(false);
-                      setShowConsiderBuy(false);
-                      setShowStrongSell(false);
-                      setShowSell(false);
-                      setShowConsiderSell(false);
-                    }}
-                    className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"
-                  >
-                    Hide All
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowStrongBuy(true);
-                      setShowBuy(false);
-                      setShowConsiderBuy(false);
-                      setShowStrongSell(true);
-                      setShowSell(false);
-                      setShowConsiderSell(false);
-                    }}
-                    className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 rounded"
-                  >
-                    Strong Only
-                  </button>
-                </div>
-              </div>
-              
-              <div style={{ height: '500px' }}>
-                <canvas ref={chartRef}></canvas>
-              </div>
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">6️⃣</span>
+            <div>
+              <h3 class="font-bold text-white mb-1">Include Realistic Fees</h3>
+              <p class="text-sm text-gray-300">Set trading fees to 0.1% to see the real impact of costs on your strategy.</p>
             </div>
+          </div>
 
-            {/* Trade History */}
-            <div className="bg-gray-800 p-6 rounded-xl">
-              <h2 className="text-2xl font-bold mb-6">Recent Trades (Last 10)</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-700">
-                      <th className="text-left p-3 text-gray-400">Date</th>
-                      <th className="text-left p-3 text-gray-400">Type</th>
-                      <th className="text-right p-3 text-gray-400">Entry</th>
-                      <th className="text-right p-3 text-gray-400">Exit</th>
-                      <th className="text-left p-3 text-gray-400">Exit Reason</th>
-                      <th className="text-right p-3 text-gray-400">Fees</th>
-                      <th className="text-right p-3 text-gray-400">P&L</th>
-                      <th className="text-right p-3 text-gray-400">Return</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trades.slice(-10).reverse().map((trade, idx) => (
-                      <tr key={idx} className="border-b border-gray-700/50">
-                        <td className="p-3 text-gray-300">{trade.timestamp.toLocaleDateString()}</td>
-                        <td className="p-3">
-                          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-green-900 text-green-300">
-                            LONG
-                          </span>
-                        </td>
-                        <td className="p-3 text-right text-gray-300">${trade.entry.toLocaleString()}</td>
-                        <td className="p-3 text-right text-gray-300">${trade.exit.toLocaleString()}</td>
-                        <td className="p-3 text-gray-300">
-                          <span className={`text-xs ${trade.exitReason === 'Stop Loss' ? 'text-red-400' : trade.exitReason.includes('LIQUIDATED') ? 'text-red-600 font-bold' : 'text-blue-400'}`}>
-                            {trade.exitReason}
-                          </span>
-                        </td>
-                        <td className="p-3 text-right text-orange-400 text-sm">
-                          ${trade.fees?.toFixed(2) || '0.00'}
-                        </td>
-                        <td className={`p-3 text-right font-bold ${trade.pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}
-                        </td>
-                        <td className={`p-3 text-right font-bold ${trade.pnlPercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          {trade.pnlPercent >= 0 ? '+' : ''}{trade.pnlPercent.toFixed(2)}%
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Warning Banner - Moved to Bottom */}
-            <div className="bg-red-900/30 border-2 border-red-500 p-6 rounded-xl mt-8">
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 mt-1">
-                  <AlertTriangle />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold mb-3 text-red-400">⚠️ Educational Tool Only</h3>
-                  <ul className="space-y-2 text-sm text-gray-300">
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400 font-bold">•</span>
-                      <span><strong>Past performance does NOT guarantee future results.</strong> Markets change constantly.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400 font-bold">•</span>
-                      <span>This backtest uses perfect hindsight with instant fills and no slippage - real trading is messier.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400 font-bold">•</span>
-                      <span>Real trading includes emotional factors, network delays, and market impact that backtests cannot simulate.</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-red-400 font-bold">•</span>
-                      <span><strong>High leverage can lead to total loss.</strong> Never risk more than you can afford to lose.</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
+          <div class="flex items-start gap-3">
+            <span class="text-2xl">7️⃣</span>
+            <div>
+              <h3 class="font-bold text-white mb-1">Don't Over-Optimize</h3>
+              <p class="text-sm text-gray-300">If you tweak parameters to get perfect historical results, it probably won't work in the future (this is called "overfitting").</p>
             </div>
           </div>
         </div>
-      );
-    }
+      </section>
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<BollingerBacktest />);
-  </script>
+      <!-- Limitations -->
+      <section class="bg-red-900/30 p-8 rounded-xl mb-8 border-2 border-red-500">
+        <h2 class="text-3xl font-bold mb-6 text-red-400">⚠️ Important Limitations</h2>
+        
+        <div class="space-y-4">
+          <div class="bg-gray-900 p-4 rounded-lg border border-red-700">
+            <h3 class="font-bold text-red-400 mb-2">🚫 No Slippage</h3>
+            <p class="text-sm text-gray-300">Real trades don't execute at exact prices, especially during volatile movements. This backtest assumes perfect fills.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border border-red-700">
+            <h3 class="font-bold text-red-400 mb-2">🚫 No Emotions</h3>
+            <p class="text-sm text-gray-300">Backtests don't include fear, greed, panic, or the stress of watching real money move. Emotions affect real trading significantly.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border border-red-700">
+            <h3 class="font-bold text-red-400 mb-2">🚫 Perfect Hindsight</h3>
+            <p class="text-sm text-gray-300">You're seeing what already happened. Real trading involves uncertainty and incomplete information.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border border-red-700">
+            <h3 class="font-bold text-red-400 mb-2">🚫 No Market Impact</h3>
+            <p class="text-sm text-gray-300">Large orders move markets. This backtest assumes your trades don't affect prices.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border border-red-700">
+            <h3 class="font-bold text-red-400 mb-2">🚫 Limited History</h3>
+            <p class="text-sm text-gray-300">~42 days is not enough to evaluate a strategy fully. You need months or years of data across different market conditions.</p>
+          </div>
+
+          <div class="bg-gray-900 p-4 rounded-lg border border-red-700">
+            <h3 class="font-bold text-red-400 mb-2">🚫 No Black Swan Events</h3>
+            <p class="text-sm text-gray-300">Unexpected crashes, exchange hacks, or regulatory changes can't be predicted or backtested.</p>
+          </div>
+        </div>
+
+        <div class="mt-6 bg-red-900/50 p-5 rounded-lg border-2 border-red-500">
+          <p class="font-bold text-xl text-red-400 mb-3">⚠️ CRITICAL WARNING</p>
+          <p class="text-gray-200 leading-relaxed">
+            <strong>Past performance does NOT guarantee future results.</strong> Just because a strategy was profitable in a backtest does NOT mean it will be profitable going forward. Many factors change: market conditions, volatility, correlations, and more. This tool is for EDUCATION ONLY. Never trade with money you cannot afford to lose.
+          </p>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section class="bg-gray-800 p-8 rounded-xl mb-8 border-2 border-gray-700">
+        <h2 class="text-3xl font-bold mb-6 text-purple-400">❓ Frequently Asked Questions</h2>
+        
+        <div class="space-y-6">
+          <div class="bg-gray-900 p-5 rounded-lg">
+            <h3 class="font-bold text-white mb-2">Q: Why do some strategies show liquidation?</h3>
+            <p class="text-sm text-gray-300">High leverage amplifies losses. With 40x leverage, a 2.5% move against you results in liquidation. This is realistic behavior in leveraged trading.</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg">
+            <h3 class="font-bold text-white mb-2">Q: Can I use these settings for real trading?</h3>
+            <p class="text-sm text-gray-300">This tool is educational only. Real trading requires more sophisticated analysis, risk management, and understanding of market conditions. Consider it a learning tool, not trading advice.</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg">
+            <h3 class="font-bold text-white mb-2">Q: Why do results change when I select different date ranges?</h3>
+            <p class="text-sm text-gray-300">Different time periods have different market conditions (trending vs ranging, high vs low volatility). A robust strategy should perform reasonably well across multiple periods.</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg">
+            <h3 class="font-bold text-white mb-2">Q: What's a good win rate?</h3>
+            <p class="text-sm text-gray-300">Win rate alone doesn't matter. You can be profitable with 30% win rate if your winners are much larger than your losers. Focus on profit factor and Sharpe ratio instead.</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg">
+            <h3 class="font-bold text-white mb-2">Q: Should I use 100% position sizing?</h3>
+            <p class="text-sm text-gray-300">No. Real traders use 10-25% position sizing for better risk management. 100% position sizing is unrealistic and prevents you from taking multiple positions.</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg">
+            <h3 class="font-bold text-white mb-2">Q: Where does the data come from?</h3>
+            <p class="text-sm text-gray-300">Real historical price data from Binance (primary) and Kraken (fallback). The data shows actual hourly closing prices for the selected cryptocurrency.</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg">
+            <h3 class="font-bold text-white mb-2">Q: What's the best leverage to use?</h3>
+            <p class="text-sm text-gray-300">Lower is safer. 5-10x gives you amplified gains without excessive liquidation risk. Higher leverage (20x+) is extremely risky and mainly used by experienced traders for short-term positions.</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg">
+            <h3 class="font-bold text-white mb-2">Q: Why are there so many signals on the chart?</h3>
+            <p class="text-sm text-gray-300">The tool shows ALL signal levels (Strong Buy, Buy, Consider Buy, etc.). Use the toggles to show only strong signals, or adjust your Buy/Sell Zone parameters to be more selective.</p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg">
+            <h3 class="font-bold text-white mb-2">Q: Can this strategy work in any market?</h3>
+            <p class="text-sm text-gray-300">Bollinger Bands work best in ranging/sideways markets. In strong trending markets, the strategy may repeatedly buy dips in a downtrend or sell rallies in an uptrend, leading to losses.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recommended Starting Settings -->
+      <section class="bg-gradient-to-r from-blue-900/50 to-purple-900/50 p-8 rounded-xl mb-8 border-2 border-blue-500">
+        <h2 class="text-3xl font-bold mb-6 text-blue-300">🎯 Recommended Starting Settings</h2>
+        
+        <div class="bg-gray-900/80 p-6 rounded-lg">
+          <p class="text-gray-300 mb-4">For beginners, start with these conservative settings:</p>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-800 p-4 rounded-lg border border-blue-500">
+              <p class="text-sm text-gray-400 mb-1">Starting Capital</p>
+              <p class="text-xl font-bold text-white">$10,000</p>
+            </div>
+            
+            <div class="bg-gray-800 p-4 rounded-lg border border-blue-500">
+              <p class="text-sm text-gray-400 mb-1">Leverage</p>
+              <p class="text-xl font-bold text-white">5x</p>
+            </div>
+            
+            <div class="bg-gray-800 p-4 rounded-lg border border-blue-500">
+              <p class="text-sm text-gray-400 mb-1">Period</p>
+              <p class="text-xl font-bold text-white">20</p>
+            </div>
+            
+            <div class="bg-gray-800 p-4 rounded-lg border border-blue-500">
+              <p class="text-sm text-gray-400 mb-1">Std Dev</p>
+              <p class="text-xl font-bold text-white">2.0</p>
+            </div>
+            
+            <div class="bg-gray-800 p-4 rounded-lg border border-blue-500">
+              <p class="text-sm text-gray-400 mb-1">Buy Zone</p>
+              <p class="text-xl font-bold text-white">5%</p>
+            </div>
+            
+            <div class="bg-gray-800 p-4 rounded-lg border border-blue-500">
+              <p class="text-sm text-gray-400 mb-1">Sell Zone</p>
+              <p class="text-xl font-bold text-white">5%</p>
+            </div>
+            
+            <div class="bg-gray-800 p-4 rounded-lg border border-green-500">
+              <p class="text-sm text-gray-400 mb-1">Stop Loss</p>
+              <p class="text-xl font-bold text-white">Enabled at -15%</p>
+            </div>
+            
+            <div class="bg-gray-800 p-4 rounded-lg border border-green-500">
+              <p class="text-sm text-gray-400 mb-1">Position Size</p>
+              <p class="text-xl font-bold text-white">25%</p>
+            </div>
+            
+            <div class="bg-gray-800 p-4 rounded-lg border border-green-500">
+              <p class="text-sm text-gray-400 mb-1">Trading Fees</p>
+              <p class="text-xl font-bold text-white">0.1%</p>
+            </div>
+            
+            <div class="bg-gray-800 p-4 rounded-lg border border-green-500">
+              <p class="text-sm text-gray-400 mb-1">Date Range</p>
+              <p class="text-xl font-bold text-white">All Data</p>
+            </div>
+          </div>
+
+          <div class="mt-6 bg-blue-900/30 p-4 rounded-lg border border-blue-400">
+            <p class="text-sm text-gray-200">
+              <strong>Why these settings?</strong> They provide reasonable risk management with stop losses, realistic fees, and diversified position sizing. You'll see how the strategy performs with moderate leverage before experimenting with more aggressive settings.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Advanced Concepts -->
+      <section class="bg-gray-800 p-8 rounded-xl mb-8 border-2 border-gray-700">
+        <h2 class="text-3xl font-bold mb-6 text-orange-400">🔬 Advanced Concepts</h2>
+        
+        <div class="space-y-6">
+          <div class="bg-gray-900 p-5 rounded-lg border border-orange-700">
+            <h3 class="font-bold text-orange-400 mb-3">Mean Reversion Strategy</h3>
+            <p class="text-sm text-gray-300 mb-2">
+              Bollinger Bands are based on "mean reversion" - the theory that prices tend to return to their average after extreme movements. When price touches the lower band (oversold), it's expected to bounce back up. When it touches the upper band (overbought), it's expected to come back down.
+            </p>
+            <p class="text-sm text-gray-400">
+              <strong>Best for:</strong> Ranging markets, consolidation periods, stable volatility
+            </p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-orange-700">
+            <h3 class="font-bold text-orange-400 mb-3">Volatility Indicators</h3>
+            <p class="text-sm text-gray-300 mb-2">
+              The width of the Bollinger Bands indicates market volatility. Wide bands = high volatility, narrow bands = low volatility. Many traders look for "squeezes" (very narrow bands) as they often precede large moves.
+            </p>
+            <p class="text-sm text-gray-400">
+              <strong>Pro tip:</strong> Adjust Std Dev to see how band width affects signal frequency
+            </p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-orange-700">
+            <h3 class="font-bold text-orange-400 mb-3">Risk of Ruin</h3>
+            <p class="text-sm text-gray-300 mb-2">
+              With high leverage, a series of losses can wipe out your account (liquidation). The probability of this happening increases with: higher leverage, no stop losses, 100% position sizing, and volatile markets.
+            </p>
+            <p class="text-sm text-gray-400">
+              <strong>Mitigation:</strong> Use lower leverage, enable stop losses, reduce position size
+            </p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-orange-700">
+            <h3 class="font-bold text-orange-400 mb-3">Compounding Effects</h3>
+            <p class="text-sm text-gray-300 mb-2">
+              Notice how consecutive wins grow your account exponentially, but consecutive losses shrink it fast. This is compounding. A 50% gain followed by a 50% loss doesn't break even - you're down 25%.
+            </p>
+            <p class="text-sm text-gray-400">
+              <strong>Math:</strong> $10,000 → +50% = $15,000 → -50% = $7,500 (net -25%)
+            </p>
+          </div>
+
+          <div class="bg-gray-900 p-5 rounded-lg border border-orange-700">
+            <h3 class="font-bold text-orange-400 mb-3">Parameter Sensitivity</h3>
+            <p class="text-sm text-gray-300 mb-2">
+              Small changes in parameters can dramatically affect results. A strategy that's highly sensitive to parameter tweaks is likely "overfit" to historical data and won't work well in the future.
+            </p>
+            <p class="text-sm text-gray-400">
+              <strong>Test:</strong> Try Period = 19 vs 20 vs 21. If results change drastically, be skeptical
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Learning Path -->
+      <section class="bg-gradient-to-r from-green-900/50 to-blue-900/50 p-8 rounded-xl mb-8 border-2 border-green-500">
+        <h2 class="text-3xl font-bold mb-6 text-green-300">📚 Learning Path</h2>
+        
+        <div class="space-y-4">
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold text-xl">
+              1
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Understand the Basics</h3>
+              <p class="text-sm text-gray-300">Learn what Bollinger Bands are and how mean reversion works. Run the backtest with default settings on BTC for All Data.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold text-xl">
+              2
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Experiment with Leverage</h3>
+              <p class="text-sm text-gray-300">Try 5x, 10x, 20x, and 40x leverage. Notice how risk and returns scale. See liquidations happen with high leverage.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold text-xl">
+              3
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Test Stop Losses</h3>
+              <p class="text-sm text-gray-300">Enable/disable stop losses and try different percentages. See how they protect capital but may also exit winning trades early.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold text-xl">
+              4
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Adjust Band Parameters</h3>
+              <p class="text-sm text-gray-300">Change Period and Std Dev to see how sensitivity affects signal frequency and quality. Find the balance.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold text-xl">
+              5
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Compare Multiple Coins</h3>
+              <p class="text-sm text-gray-300">Run the same strategy on BTC, ETH, SOL, and ZEC. Notice how different assets perform differently with the same rules.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold text-xl">
+              6
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Test Across Time Periods</h3>
+              <p class="text-sm text-gray-300">Check 7d, 14d, 30d, and All Data. A robust strategy should work reasonably well across all periods, not just one.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold text-xl">
+              7
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Add Realistic Constraints</h3>
+              <p class="text-sm text-gray-300">Use 25% position sizing, 0.1% fees, and enable stop losses. This simulates real trading conditions more accurately.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center font-bold text-xl">
+              8
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Analyze the Equity Curve</h3>
+              <p class="text-sm text-gray-300">Look for smooth upward trends rather than volatile swings. Consistent growth is more sustainable than lucky big wins.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center font-bold text-xl">
+              9
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Study Failed Trades</h3>
+              <p class="text-sm text-gray-300">Look at the trade history table. Identify why losses happened. Were they stopped out? Liquidated? Wrong market conditions?</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center font-bold text-xl">
+              10
+            </div>
+            <div class="flex-1">
+              <h3 class="font-bold text-white mb-1">Understand Limitations</h3>
+              <p class="text-sm text-gray-300">Remember: backtests use perfect information, no slippage, and no emotions. Real trading is harder. Never assume backtest results will repeat.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Final Disclaimer -->
+      <section class="bg-red-900/40 p-8 rounded-xl mb-8 border-2 border-red-600">
+        <div class="flex items-start gap-4">
+          <div class="flex-shrink-0 text-4xl">
+            ⚠️
+          </div>
+          <div>
+            <h2 class="text-2xl font-bold mb-4 text-red-300">EDUCATIONAL PURPOSE ONLY</h2>
+            <div class="space-y-3 text-gray-200">
+              <p>
+                This backtesting tool is designed solely for educational purposes to help you understand algorithmic trading concepts, risk management, and technical analysis.
+              </p>
+              <p>
+                <strong>This is NOT financial advice.</strong> This is NOT a guarantee of future performance. This is NOT a trading recommendation.
+              </p>
+              <p>
+                Cryptocurrency trading is extremely risky. You can lose all of your invested capital. Never trade with money you cannot afford to lose. High leverage can lead to rapid and total loss of funds.
+              </p>
+              <p>
+                Before trading with real money, thoroughly educate yourself about financial markets, risk management, and trading psychology. Consider consulting with a licensed financial advisor.
+              </p>
+              <p className="text-red-400 font-bold text-lg mt-4">
+                The creators of this tool are not responsible for any trading losses or financial decisions you make based on backtests performed here.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer Navigation -->
+      <div class="bg-gray-800 p-6 rounded-xl border-2 border-blue-500 text-center">
+        <a href="index.html" class="inline-block px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold text-lg transition-all">
+          🚀 Start Backtesting
+        </a>
+        <p class="text-sm text-gray-400 mt-4">Ready to explore? Head back to the main tool and start experimenting!</p>
+      </div>
+
+      <!-- Footer -->
+      <div class="mt-12 text-center text-gray-500 text-sm">
+        <p>Built for educational purposes | Data from Binance & Kraken APIs</p>
+        <p class="mt-2">Not financial advice | Trade at your own risk</p>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
