@@ -129,7 +129,6 @@
     async function fetchData() {
       const coin = coins.find(c => c.symbol === selectedCoin);
       try {
-        // Call our Netlify serverless function instead of APIs directly
         const response = await fetch(`/.netlify/functions/crypto-data?symbol=${coin.symbol}`);
         
         if (!response.ok) {
@@ -139,8 +138,7 @@
         const json = await response.json();
         
         if (json && json.length > 0) {
-          // Data format: [timestamp, open, high, low, close, volume, ...]
-          const prices = json.map(item => parseFloat(item[4])); // close price
+          const prices = json.map(item => parseFloat(item[4]));
           const bands = calculateBollingerBands(prices);
           const signal = getSignal(bands);
           
@@ -257,7 +255,7 @@
                   Bollinger Bands Trading Signals
                 </h1>
                 <div class="flex items-center gap-4 text-gray-400 text-sm">
-                  <span>Statistical Band Analysis</span>
+                  <span>Real-Time Statistical Band Analysis</span>
                   <span>•</span>
                   <span>Updated: ${lastUpdate}</span>
                 </div>
@@ -269,6 +267,18 @@
                   ${coins.map(c => `<option value="${c.symbol}" ${c.symbol === selectedCoin ? 'selected' : ''}>${c.symbol} - ${c.name}</option>`).join('')}
                 </select>
               </div>
+            </div>
+
+            <!-- Navigation Links -->
+            <div class="flex gap-3 mt-6 flex-wrap">
+              <a href="backtest.html" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-all inline-flex items-center gap-2 text-sm">
+                <span>📊</span>
+                <span>Backtest Strategy</span>
+              </a>
+              <a href="readme.html" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold transition-all inline-flex items-center gap-2 text-sm">
+                <span>📖</span>
+                <span>Full Guide</span>
+              </a>
             </div>
           </div>
 
@@ -363,6 +373,11 @@
             <div class="mt-6 p-4 bg-purple-900 bg-opacity-30 border border-purple-700 rounded">
               <p class="text-sm text-purple-200">
                 <strong>Key:</strong> Bollinger Bands show statistical extremes (2 standard deviations = 95% probability). When price hits the bands, it's at a level that historically doesn't last - expect mean reversion.
+              </p>
+            </div>
+            <div class="mt-4 p-4 bg-blue-900 bg-opacity-30 border border-blue-700 rounded">
+              <p class="text-sm text-blue-200">
+                <strong>Want to test this strategy?</strong> Visit the <a href="backtest.html" class="underline font-bold hover:text-blue-300">Backtest page</a> to see how these signals would have performed historically with different parameters.
               </p>
             </div>
           </div>
