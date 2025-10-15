@@ -27,7 +27,7 @@ exports.handler = async (event, context) => {
   try {
     const binanceSymbol = symbol + 'USDT';
     let response = await fetch(
-      `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=1h&limit=100`
+      `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=1h&limit=1000`
     );
 
     if (response.ok) {
@@ -41,10 +41,9 @@ exports.handler = async (event, context) => {
     }
 
     const krakenPair = symbol + 'USD';
-    response = await fetch(
-      `https://api.kraken.com/0/public/OHLC?pair=${krakenPair}&interval=60`
-    );
-
+response = await fetch(
+  `https://api.kraken.com/0/public/OHLC?pair=${krakenPair}&interval=60&count=720`
+);
     if (response.ok) {
       const krakenData = await response.json();
       if (krakenData.result) {
