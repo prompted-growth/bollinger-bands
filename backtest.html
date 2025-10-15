@@ -68,6 +68,15 @@
       const [sellZone, setSellZone] = useState(5);
       const [stopLossEnabled, setStopLossEnabled] = useState(false);
       const [stopLossPercent, setStopLossPercent] = useState(20);
+      const [dateRange, setDateRange] = useState('all');
+      
+      // Signal visibility toggles
+      const [showStrongBuy, setShowStrongBuy] = useState(true);
+      const [showBuy, setShowBuy] = useState(false);
+      const [showConsiderBuy, setShowConsiderBuy] = useState(false);
+      const [showStrongSell, setShowStrongSell] = useState(true);
+      const [showSell, setShowSell] = useState(false);
+      const [showConsiderSell, setShowConsiderSell] = useState(false);
 
       const calculateBollingerBands = (prices, customPeriod, customStdDev) => {
         if (prices.length < customPeriod) return null;
@@ -97,32 +106,128 @@
         if (position >= (100 - customSellZone)) return 'SELL';
         return null;
       };
+      
+      const getAllSignals = (position) => {
+        if (position === null) return [];
+        const signals = [];
+        
+        // Buy signals
+        if (position <= 5) signals.push('STRONG_BUY');
+        else if (position > 5 && position <= 15) signals.push('BUY');
+        else if (position > 15 && position <= 35) signals.push('CONSIDER_BUY');
+        
+        // Sell signals
+        if (position >= 95) signals.push('STRONG_SELL');
+        else if (position < 95 && position >= 85) signals.push('SELL');
+        else if (position < 85 && position >= 65) signals.push('CONSIDER_SELL');
+        
+        return signals;
+      };
 
       const runBacktest = (historicalData, params) => {
+        // Filter data by date range
+        let filteredData = historicalData;
+        const now = new Date(historicalData[historicalData.length - 1].timestamp);
+        
+        if (params.dateRange === '7d') {
+          const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          filteredData = historicalData.filter(d => d.timestamp >= cutoff);
+        } else if (params.dateRange === '14d') {
+          const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+          filteredData = historicalData.filter(d => d.timestamp >= cutoff);
+        } else if (params.dateRange === '30d') {
+          const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          filteredData = historicalData.filter(d => d.timestamp >= cutoff);
+        }
+        // 'all' uses all data
+        
         const trades = [];
         let position = null;
         let entryPrice = 0;
         let capital = params.startingCapital;
         let totalCapital = capital;
+        let peakCapital = capital;
+        let maxDrawdown = 0;
+        let currentDrawdown = 0;
         
         const chartData = [];
         const signals = [];
+        const allSignalPoints = []; // Store all signal types
+        const equityCurve = [];
         
-        for (let i = params.period; i < historicalData.length; i++) {
-          const prices = historicalData.slice(0, i + 1).map(d => d.close);
+        for (let i = params.period; i < filteredData.length; i++) {
+          const prices = filteredData.slice(0, i + 1).map(d => d.close);
           const currentPrice = prices[prices.length - 1];
           const bands = calculateBollingerBands(prices, params.period, params.stdDev);
           const positionInBand = getPositionInBand(currentPrice, bands);
           const signal = getSignal(positionInBand, params.buyZone, params.sellZone);
+          const allSignals = getAllSignals(positionInBand);
           
           chartData.push({
-            timestamp: historicalData[i].timestamp,
+            timestamp: filteredData[i].timestamp,
             price: currentPrice,
             upper: bands.upper,
             middle: bands.middle,
             lower: bands.lower,
             positionInBand: positionInBand
           });
+          
+          // Store all signal types for visualization
+          allSignals.forEach(sig => {
+            allSignalPoints.push({
+              index: i,
+              type: sig,
+              price: currentPrice,
+              timestamp: filteredData[i].timestamp
+            });
+          });
+          
+          // Track equity curve
+          let currentEquity = totalCapital;
+          if (position === 'long') {
+            const unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * capital * params.leverage;
+            currentEquity = totalCapital + unrealizedPnL;
+          }
+          
+          equityCurve.push({
+            timestamp: filteredData[i].timestamp,
+            equity: currentEquity
+          });
+          
+          // Update peak and drawdown
+          if (currentEquity > peakCapital) {
+            peakCapital = currentEquity;
+          }
+          currentDrawdown = ((currentEquity - peakCapital) / peakCapital) * 100;
+          if (currentDrawdown < maxDrawdown) {
+            maxDrawdown = currentDrawdown;
+          }
+          
+          // LIQUIDATION LOGIC
+          if (position === 'long') {
+            const currentPnLPercent = ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage;
+            const liquidationThreshold = -(100 / params.leverage) * 0.95; // 95% of max loss before liquidation
+            
+            if (currentPnLPercent <= liquidationThreshold) {
+              // LIQUIDATED!
+              const pnl = -capital; // Lost entire position
+              totalCapital = 0;
+              trades.push({
+                type: 'long',
+                entry: entryPrice,
+                exit: currentPrice,
+                exitReason: '💀 LIQUIDATED',
+                pnl: pnl,
+                pnlPercent: -100,
+                timestamp: filteredData[i].timestamp
+              });
+              position = null;
+              capital = 0;
+              
+              // Can't continue trading with $0
+              break;
+            }
+          }
           
           // Check stop loss
           if (position === 'long' && params.stopLossEnabled) {
@@ -137,7 +242,7 @@
                 exitReason: 'Stop Loss',
                 pnl: pnl,
                 pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage,
-                timestamp: historicalData[i].timestamp
+                timestamp: filteredData[i].timestamp
               });
               position = null;
               capital = totalCapital;
@@ -145,7 +250,7 @@
             }
           }
           
-          if (signal === 'BUY' && position === null) {
+          if (signal === 'BUY' && position === null && totalCapital > 0) {
             position = 'long';
             entryPrice = currentPrice;
             capital = totalCapital;
@@ -160,7 +265,7 @@
               exitReason: 'Signal',
               pnl: pnl,
               pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage,
-              timestamp: historicalData[i].timestamp
+              timestamp: filteredData[i].timestamp
             });
             position = null;
             capital = totalCapital;
@@ -179,6 +284,8 @@
           trades,
           chartData,
           signals,
+          allSignalPoints,
+          equityCurve,
           metrics: {
             totalTrades: trades.length,
             winningTrades: winningTrades.length,
@@ -187,7 +294,10 @@
             totalReturn,
             finalCapital: totalCapital,
             avgWin,
-            avgLoss
+            avgLoss,
+            maxDrawdown: maxDrawdown,
+            peakCapital: peakCapital,
+            wasLiquidated: totalCapital === 0
           }
         };
       };
@@ -226,12 +336,13 @@
           buyZone,
           sellZone,
           stopLossEnabled,
-          stopLossPercent
+          stopLossPercent,
+          dateRange
         };
         
         const backtestResults = runBacktest(data, params);
         setBacktest(backtestResults);
-      }, [data, startingCapital, leverage, period, stdDev, buyZone, sellZone, stopLossEnabled, stopLossPercent]);
+      }, [data, startingCapital, leverage, period, stdDev, buyZone, sellZone, stopLossEnabled, stopLossPercent, dateRange]);
 
       useEffect(() => {
         if (!backtest || !chartRef.current) return;
@@ -243,90 +354,193 @@
         const ctx = chartRef.current.getContext('2d');
         const displayData = backtest.chartData.slice(-200);
 
-        const buySignals = backtest.signals
-          .filter(s => s.type === 'BUY')
-          .filter(s => s.index >= backtest.chartData.length - 200)
+        // Filter signals based on toggles
+        const visibleSignals = backtest.allSignalPoints.filter(s => {
+          if (s.type === 'STRONG_BUY' && showStrongBuy) return true;
+          if (s.type === 'BUY' && showBuy) return true;
+          if (s.type === 'CONSIDER_BUY' && showConsiderBuy) return true;
+          if (s.type === 'STRONG_SELL' && showStrongSell) return true;
+          if (s.type === 'SELL' && showSell) return true;
+          if (s.type === 'CONSIDER_SELL' && showConsiderSell) return true;
+          return false;
+        }).filter(s => s.index >= backtest.chartData.length - 200);
+
+        // Group by type for different colors/sizes
+        const strongBuySignals = visibleSignals
+          .filter(s => s.type === 'STRONG_BUY')
           .map(s => ({
-            x: displayData.findIndex(d => d.timestamp.getTime() === data[s.index].timestamp.getTime()),
+            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
             y: s.price
           }));
 
-        const sellSignals = backtest.signals
-          .filter(s => s.type === 'SELL')
-          .filter(s => s.index >= backtest.chartData.length - 200)
+        const buySignals = visibleSignals
+          .filter(s => s.type === 'BUY')
           .map(s => ({
-            x: displayData.findIndex(d => d.timestamp.getTime() === data[s.index].timestamp.getTime()),
+            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
             y: s.price
           }));
+
+        const considerBuySignals = visibleSignals
+          .filter(s => s.type === 'CONSIDER_BUY')
+          .map(s => ({
+            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
+            y: s.price
+          }));
+
+        const strongSellSignals = visibleSignals
+          .filter(s => s.type === 'STRONG_SELL')
+          .map(s => ({
+            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
+            y: s.price
+          }));
+
+        const sellSignals = visibleSignals
+          .filter(s => s.type === 'SELL')
+          .map(s => ({
+            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
+            y: s.price
+          }));
+
+        const considerSellSignals = visibleSignals
+          .filter(s => s.type === 'CONSIDER_SELL')
+          .map(s => ({
+            x: displayData.findIndex(d => d.timestamp.getTime() === s.timestamp.getTime()),
+            y: s.price
+          }));
+
+        const datasets = [
+          {
+            label: 'Price',
+            data: displayData.map(d => d.price),
+            borderColor: '#FFFFFF',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 0,
+            order: 2
+          },
+          {
+            label: 'Upper Band',
+            data: displayData.map(d => d.upper),
+            borderColor: '#EF4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            fill: '+1',
+            borderWidth: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            order: 3
+          },
+          {
+            label: 'Middle Band',
+            data: displayData.map(d => d.middle),
+            borderColor: '#3B82F6',
+            backgroundColor: 'transparent',
+            borderWidth: 1,
+            pointRadius: 0,
+            order: 4
+          },
+          {
+            label: 'Lower Band',
+            data: displayData.map(d => d.lower),
+            borderColor: '#10B981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            fill: 'origin',
+            borderWidth: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            order: 5
+          }
+        ];
+
+        // Add signal datasets if they have data
+        if (strongBuySignals.length > 0) {
+          datasets.push({
+            label: '🟢 STRONG BUY',
+            data: strongBuySignals,
+            type: 'scatter',
+            backgroundColor: '#10B981',
+            borderColor: '#FFFFFF',
+            borderWidth: 3,
+            pointRadius: 10,
+            pointHoverRadius: 12,
+            order: 1
+          });
+        }
+
+        if (buySignals.length > 0) {
+          datasets.push({
+            label: '🟢 BUY',
+            data: buySignals,
+            type: 'scatter',
+            backgroundColor: '#34D399',
+            borderColor: '#FFFFFF',
+            borderWidth: 2,
+            pointRadius: 7,
+            pointHoverRadius: 9,
+            order: 1
+          });
+        }
+
+        if (considerBuySignals.length > 0) {
+          datasets.push({
+            label: '🔵 CONSIDER BUY',
+            data: considerBuySignals,
+            type: 'scatter',
+            backgroundColor: '#3B82F6',
+            borderColor: '#FFFFFF',
+            borderWidth: 1,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            order: 1
+          });
+        }
+
+        if (strongSellSignals.length > 0) {
+          datasets.push({
+            label: '🔴 STRONG SELL',
+            data: strongSellSignals,
+            type: 'scatter',
+            backgroundColor: '#EF4444',
+            borderColor: '#FFFFFF',
+            borderWidth: 3,
+            pointRadius: 10,
+            pointHoverRadius: 12,
+            order: 1
+          });
+        }
+
+        if (sellSignals.length > 0) {
+          datasets.push({
+            label: '🔴 SELL',
+            data: sellSignals,
+            type: 'scatter',
+            backgroundColor: '#F87171',
+            borderColor: '#FFFFFF',
+            borderWidth: 2,
+            pointRadius: 7,
+            pointHoverRadius: 9,
+            order: 1
+          });
+        }
+
+        if (considerSellSignals.length > 0) {
+          datasets.push({
+            label: '🟡 CONSIDER SELL',
+            data: considerSellSignals,
+            type: 'scatter',
+            backgroundColor: '#FBBF24',
+            borderColor: '#FFFFFF',
+            borderWidth: 1,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            order: 1
+          });
+        }
 
         chartInstance.current = new Chart(ctx, {
           type: 'line',
           data: {
             labels: displayData.map((d, i) => i),
-            datasets: [
-              {
-                label: 'Price',
-                data: displayData.map(d => d.price),
-                borderColor: '#FFFFFF',
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                pointRadius: 0,
-                order: 2
-              },
-              {
-                label: 'Upper Band',
-                data: displayData.map(d => d.upper),
-                borderColor: '#EF4444',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                fill: '+1',
-                borderWidth: 1,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                order: 3
-              },
-              {
-                label: 'Middle Band',
-                data: displayData.map(d => d.middle),
-                borderColor: '#3B82F6',
-                backgroundColor: 'transparent',
-                borderWidth: 1,
-                pointRadius: 0,
-                order: 4
-              },
-              {
-                label: 'Lower Band',
-                data: displayData.map(d => d.lower),
-                borderColor: '#10B981',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                fill: 'origin',
-                borderWidth: 1,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                order: 5
-              },
-              {
-                label: 'BUY Signals',
-                data: buySignals,
-                type: 'scatter',
-                backgroundColor: '#10B981',
-                borderColor: '#FFFFFF',
-                borderWidth: 2,
-                pointRadius: 8,
-                pointHoverRadius: 10,
-                order: 1
-              },
-              {
-                label: 'SELL Signals',
-                data: sellSignals,
-                type: 'scatter',
-                backgroundColor: '#EF4444',
-                borderColor: '#FFFFFF',
-                borderWidth: 2,
-                pointRadius: 8,
-                pointHoverRadius: 10,
-                order: 1
-              }
-            ]
+            datasets: datasets
           },
           options: {
             responsive: true,
@@ -373,7 +587,7 @@
             chartInstance.current.destroy();
           }
         };
-      }, [backtest, data]);
+      }, [backtest, data, showStrongBuy, showBuy, showConsiderBuy, showStrongSell, showSell, showConsiderSell]);
 
       if (loading) {
         return (
@@ -421,6 +635,31 @@
             {/* Settings Panel */}
             <div className="bg-gray-800 p-6 rounded-xl mb-8 border-2 border-blue-500">
               <h2 className="text-2xl font-bold mb-6">⚙️ Strategy Settings</h2>
+              
+              {/* Date Range Selector */}
+              <div className="mb-6 pb-6 border-b border-gray-700">
+                <label className="block text-gray-400 mb-3 font-semibold">📅 Date Range</label>
+                <div className="flex gap-2">
+                  {[
+                    { value: '7d', label: 'Last 7 Days' },
+                    { value: '14d', label: 'Last 14 Days' },
+                    { value: '30d', label: 'Last 30 Days' },
+                    { value: 'all', label: 'All Data (~42 days)' }
+                  ].map(range => (
+                    <button
+                      key={range.value}
+                      onClick={() => setDateRange(range.value)}
+                      className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all ${
+                        dateRange === range.value
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      {range.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Starting Capital */}
@@ -570,18 +809,39 @@
             </div>
 
             {/* Metrics Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <div className={`p-6 rounded-xl ${metrics.totalReturn >= 0 ? 'bg-green-900/30 border-2 border-green-500' : 'bg-red-900/30 border-2 border-red-500'}`}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+              <div className={`p-6 rounded-xl ${
+                metrics.wasLiquidated 
+                  ? 'bg-red-900/50 border-2 border-red-500'
+                  : metrics.totalReturn >= 0 
+                    ? 'bg-green-900/30 border-2 border-green-500' 
+                    : 'bg-red-900/30 border-2 border-red-500'
+              }`}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-gray-400">Total Return</span>
-                  {metrics.totalReturn >= 0 ? <TrendingUp /> : <TrendingDown />}
+                  {metrics.wasLiquidated ? (
+                    <span className="text-2xl">💀</span>
+                  ) : metrics.totalReturn >= 0 ? (
+                    <TrendingUp />
+                  ) : (
+                    <TrendingDown />
+                  )}
                 </div>
-                <div className={`text-3xl font-bold ${metrics.totalReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                  {metrics.totalReturn >= 0 ? '+' : ''}{metrics.totalReturn.toFixed(2)}%
-                </div>
-                <div className="text-sm text-gray-400 mt-2">
-                  ${metrics.finalCapital.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                </div>
+                {metrics.wasLiquidated ? (
+                  <>
+                    <div className="text-3xl font-bold text-red-500">LIQUIDATED</div>
+                    <div className="text-sm text-red-400 mt-2">Account Wiped Out</div>
+                  </>
+                ) : (
+                  <>
+                    <div className={`text-3xl font-bold ${metrics.totalReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {metrics.totalReturn >= 0 ? '+' : ''}{metrics.totalReturn.toFixed(2)}%
+                    </div>
+                    <div className="text-sm text-gray-400 mt-2">
+                      ${metrics.finalCapital.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
@@ -622,11 +882,147 @@
                   ${metrics.avgLoss.toFixed(0)}
                 </div>
               </div>
+
+              <div className={`p-6 rounded-xl border-2 ${
+                metrics.maxDrawdown < -50 
+                  ? 'bg-red-900/30 border-red-500'
+                  : metrics.maxDrawdown < -25
+                    ? 'bg-yellow-900/30 border-yellow-500'
+                    : 'bg-gray-800 border-gray-700'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Max Drawdown</span>
+                  <TrendingDown />
+                </div>
+                <div className={`text-3xl font-bold ${
+                  metrics.maxDrawdown < -50 
+                    ? 'text-red-500'
+                    : metrics.maxDrawdown < -25
+                      ? 'text-yellow-500'
+                      : 'text-gray-300'
+                }`}>
+                  {metrics.maxDrawdown.toFixed(2)}%
+                </div>
+                <div className="text-sm text-gray-400 mt-2">
+                  Peak: ${metrics.peakCapital.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}
+                </div>
+              </div>
             </div>
 
             {/* Chart */}
             <div className="bg-gray-800 p-6 rounded-xl mb-8">
-              <h2 className="text-2xl font-bold mb-6">Price & Signals (Last 200 Hours)</h2>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold">Price & Signals (Last 200 Hours)</h2>
+              </div>
+              
+              {/* Signal Toggles */}
+              <div className="mb-6 p-4 bg-gray-900 rounded-lg">
+                <h3 className="text-sm font-semibold text-gray-400 mb-3">📍 Show Signals on Chart:</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showStrongBuy}
+                      onChange={(e) => setShowStrongBuy(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">🟢 <strong>STRONG BUY</strong> (0-5%)</span>
+                  </label>
+                  
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showBuy}
+                      onChange={(e) => setShowBuy(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">🟢 BUY (5-15%)</span>
+                  </label>
+                  
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showConsiderBuy}
+                      onChange={(e) => setShowConsiderBuy(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">🔵 Consider Buy (15-35%)</span>
+                  </label>
+                  
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showStrongSell}
+                      onChange={(e) => setShowStrongSell(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">🔴 <strong>STRONG SELL</strong> (95-100%)</span>
+                  </label>
+                  
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showSell}
+                      onChange={(e) => setShowSell(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">🔴 SELL (85-95%)</span>
+                  </label>
+                  
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showConsiderSell}
+                      onChange={(e) => setShowConsiderSell(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">🟡 Consider Sell (65-85%)</span>
+                  </label>
+                </div>
+                
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowStrongBuy(true);
+                      setShowBuy(true);
+                      setShowConsiderBuy(true);
+                      setShowStrongSell(true);
+                      setShowSell(true);
+                      setShowConsiderSell(true);
+                    }}
+                    className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded"
+                  >
+                    Show All
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowStrongBuy(false);
+                      setShowBuy(false);
+                      setShowConsiderBuy(false);
+                      setShowStrongSell(false);
+                      setShowSell(false);
+                      setShowConsiderSell(false);
+                    }}
+                    className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"
+                  >
+                    Hide All
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowStrongBuy(true);
+                      setShowBuy(false);
+                      setShowConsiderBuy(false);
+                      setShowStrongSell(true);
+                      setShowSell(false);
+                      setShowConsiderSell(false);
+                    }}
+                    className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 rounded"
+                  >
+                    Strong Only
+                  </button>
+                </div>
+              </div>
+              
               <div style={{ height: '500px' }}>
                 <canvas ref={chartRef}></canvas>
               </div>
