@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bollinger Bands Trading Signals</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+</head>
+<body class="bg-gray-950 text-white">
+  <div id="app" class="min-h-screen p-4 md:p-8">
+    <div class="max-w-7xl mx-auto">
+      <div class="flex items-center justify-center h-screen">
+        <div class="text-center">
+          <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p class="text-xl">Loading market data...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const coins = [
+      { symbol: 'BTC', name: 'Bitcoin', id: 'bitcoin' },
+      { symbol: 'ETH', name: 'Ethereum', id: 'ethereum' },
+      { symbol: 'SOL', name: 'Solana', id: 'solana' },
+      { symbol: 'ZEC', name: 'Zcash', id: 'zcash' }
+    ];
+
+    let selectedCoin = 'BTC';
+    let coinData = null;
+    let chart = null;
+
+    function calculateBollingerBands(prices, period = 20, stdDev = 2) {
+      if (prices.length < period) return null;
+      
+      const recentPrices = prices.slice(-period);
+      const mean = recentPrices.reduce((a, b) => a + b, 0) / period;
+      const variance = recentPrices.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / period;
+      const stdDeviation = Math.sqrt(variance);
+      
+      const upper = mean + (stdDeviation * stdDev);
+      const lower = mean - (stdDeviation * stdDev);
+      const current = prices[prices.length - 1];
+      const positionInBand = ((current - lower) / (upper - lower)) * 100;
+      
+      return {
+        current,
+        upper,
+        middle: mean,
+        lower,
+        positionInBand: Math.max(0, Math.min(100, positionInBand))
+      };
+    }
+
+    function getSignal(bands) {
+      if (!bands) return { action: 'WAIT', confidence: 0, bgClass: 'bg-gray-800', textClass: 'text-gray-400' };
+      
+      const pos = bands.positionInBand;
+      const distToUpper = ((bands.upper - bands.current) / bands.current) * 100;
+      const distToLower = ((bands.current - bands.lower) / bands.current) * 100;
+      
+      if (pos >= 95) {
+        return {
+          action: 'STRONG SELL',
+          confidence: Math.min(100, 85 + (pos - 95) * 3),
+          bgClass: 'bg-red-900 border-red-500',
+          textClass: 'text-red-400',
+          reason: `At top band (${pos.toFixed(0)}%) - Statistical resistance hit`,
+          detail: `Only ${distToUpper.toFixed(2)}% from upper band - Extremely overbought`
+        };
+      } else if (pos >= 85) {
+        return {
+          action: 'SELL',
+          confidence: 60 + (pos - 85) * 2.5,
+          bgClass: 'bg-orange-900 border-orange-500',
+          textClass: 'text-orange-400',
+          reason: `Near top band (${pos.toFixed(0)}%) - Approaching resistance`,
+          detail: `${distToUpper.toFixed(2)}% from upper band - Overbought zone`
+        };
+      } else if (pos <= 5) {
+        return {
+          action: 'STRONG BUY',
+          confidence: Math.min(100, 85 + (5 - pos) * 3),
+          bgClass: 'bg-green-900 border-green-500',
+          textClass: 'text-green-400',
+          reason: `At bottom band (${pos.toFixed(0)}%) - Statistical support hit`,
+          detail: `Only ${distToLower.toFixed(2)}% from lower band - Extremely oversold`
+        };
+      } else if (pos <= 15) {
+        return {
+          action: 'BUY',
+          confidence: 60 + (15 - pos) * 1.67,
+          bgClass: 'bg-green-800 border-green-400',
+          textClass: 'text-green-300',
+          reason: `Near bottom band (${pos.toFixed(0)}%) - Approaching support`,
+          detail: `${distToLower.toFixed(2)}% from lower band - Oversold zone`
+        };
+      } else if (pos >= 65 && pos < 85) {
+        return {
+          action: 'CONSIDER SELL',
+          confidence: 30 + (pos - 65),
+          bgClass: 'bg-yellow-900 border-yellow-500',
+          textClass: 'text-yellow-400',
+          reason: `Upper zone (${pos.toFixed(0)}%) - Watch for reversal`,
+          detail: 'In upper half - Consider taking profits'
+        };
+      } else if (pos > 15 && pos <= 35) {
+        return {
+          action: 'CONSIDER BUY',
+          confidence: 30 + (35 - pos),
+          bgClass: 'bg-blue-900 border-blue-500',
+          textClass: 'text-blue-400',
+          reason: `Lower zone (${pos.toFixed(0)}%) - Watch for bounce`,
+          detail: 'In lower half - Possible entry'
+        };
+      } else {
+        return {
+          action: 'HOLD',
+          confidence: 20,
+          bgClass: 'bg-gray-800 border-gray-600',
+          textClass: 'text-gray-400',
+          reason: `Mid-range (${pos.toFixed(0)}%) - No clear signal`,
+          detail: 'Wait for band approach'
+        };
+      }
+    }
+
+    async function fetchData() {
+      const coin = coins.find(c => c.symbol === selectedCoin);
+      try {
+        // Call our Netlify serverless function instead of APIs directly
+        const response = await fetch(`/.netlify/functions/crypto-data?symbol=${coin.symbol}`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const json = await response.json();
+        
+        if (json && json.length > 0) {
+          // Data format: [timestamp, open, high, low, close, volume, ...]
+          const prices = json.map(item => parseFloat(item[4])); // close price
+          const bands = calculateBollingerBands(prices);
+          const signal = getSignal(bands);
+          
+          const chartData = json.slice(-50).map((item, index) => {
+            const fullIndex = Math.max(0, json.length - 50 + index);
+            const tempPrices = json.slice(Math.max(0, fullIndex - 19), fullIndex + 1).map(p => parseFloat(p[4]));
+            const tempBands = calculateBollingerBands(tempPrices);
+            
+            return {
+              time: new Date(parseInt(item[0])).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              price: parseFloat(item[4]),
+              upper: tempBands?.upper || null,
+              middle: tempBands?.middle || null,
+              lower: tempBands?.lower || null
+            };
+          });
+          
+          coinData = { symbol: coin.symbol, bands, signal, chartData };
+          render();
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('app').innerHTML = `
+          <div class="flex items-center justify-center h-screen">
+            <div class="text-center max-w-md">
+              <div class="text-6xl mb-4">⚠️</div>
+              <p class="text-xl mb-2">Error loading data for ${selectedCoin}</p>
+              <p class="text-gray-400 mb-4">Unable to fetch market data. Please try again in a moment.</p>
+              <button onclick="location.reload()" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-bold">Retry</button>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function createChart(data) {
+      const canvas = document.getElementById('priceChart');
+      if (!canvas) return;
+      
+      if (chart) chart.destroy();
+      
+      const ctx = canvas.getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(d => d.time),
+          datasets: [
+            {
+              label: 'Upper Band',
+              data: data.map(d => d.upper),
+              borderColor: '#EF4444',
+              borderWidth: 2,
+              fill: false,
+              pointRadius: 0
+            },
+            {
+              label: 'Middle (SMA)',
+              data: data.map(d => d.middle),
+              borderColor: '#3B82F6',
+              borderWidth: 2,
+              fill: false,
+              pointRadius: 0
+            },
+            {
+              label: 'Lower Band',
+              data: data.map(d => d.lower),
+              borderColor: '#10B981',
+              borderWidth: 2,
+              fill: false,
+              pointRadius: 0
+            },
+            {
+              label: 'Price',
+              data: data.map(d => d.price),
+              borderColor: '#FBBF24',
+              borderWidth: 3,
+              fill: false,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#9CA3AF' } }
+          },
+          scales: {
+            x: { 
+              ticks: { color: '#9CA3AF', maxRotation: 45, minRotation: 45 },
+              grid: { color: '#374151' }
+            },
+            y: { 
+              ticks: { color: '#9CA3AF', callback: value => '$' + value.toLocaleString() },
+              grid: { color: '#374151' }
+            }
+          }
+        }
+      });
+    }
+
+    function render() {
+      if (!coinData) return;
+      
+      const { bands, signal, chartData } = coinData;
+      const lastUpdate = new Date().toLocaleTimeString();
+      
+      document.getElementById('app').innerHTML = `
+        <div class="max-w-7xl mx-auto">
+          <div class="mb-8">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h1 class="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 text-transparent bg-clip-text">
+                  Bollinger Bands Trading Signals
+                </h1>
+                <div class="flex items-center gap-4 text-gray-400 text-sm">
+                  <span>Statistical Band Analysis</span>
+                  <span>•</span>
+                  <span>Updated: ${lastUpdate}</span>
+                </div>
+              </div>
+              
+              <div class="flex flex-col">
+                <label class="text-sm text-gray-400 mb-2">Select Asset</label>
+                <select id="coinSelect" class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-lg font-bold focus:outline-none focus:border-blue-500 cursor-pointer">
+                  ${coins.map(c => `<option value="${c.symbol}" ${c.symbol === selectedCoin ? 'selected' : ''}>${c.symbol} - ${c.name}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="${signal.bgClass} border-2 rounded-lg p-8 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <h2 class="text-5xl font-bold mb-2">${selectedCoin}</h2>
+                <p class="text-4xl font-mono mb-6">$${bands.current.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                
+                <div class="mb-6 p-6 bg-black bg-opacity-40 rounded-lg">
+                  <div class="flex items-center justify-between mb-3">
+                    <span class="text-3xl font-bold ${signal.textClass}">${signal.action}</span>
+                    <div class="text-right">
+                      <div class="text-3xl font-bold">${signal.confidence.toFixed(0)}%</div>
+                      <div class="text-xs text-gray-400">CONFIDENCE</div>
+                    </div>
+                  </div>
+                  <p class="text-base text-gray-300 mb-2">${signal.reason}</p>
+                  <p class="text-sm text-gray-400">${signal.detail}</p>
+                </div>
+
+                <div>
+                  <p class="text-sm text-gray-400 mb-2">Position in Band Range</p>
+                  <div class="h-4 bg-gray-700 rounded-full overflow-hidden relative">
+                    <div class="absolute inset-0 bg-gradient-to-r from-green-500 via-gray-500 to-red-500 opacity-50"></div>
+                    <div class="absolute h-full w-2 bg-white shadow-lg" style="left: calc(${bands.positionInBand}% - 4px)"></div>
+                  </div>
+                  <div class="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>OVERSOLD (0%)</span>
+                    <span>MID (50%)</span>
+                    <span>OVERBOUGHT (100%)</span>
+                  </div>
+                  <p class="text-center text-lg font-bold mt-2">${bands.positionInBand.toFixed(1)}%</p>
+                </div>
+              </div>
+
+              <div class="flex flex-col justify-center space-y-4">
+                <div class="bg-black bg-opacity-40 rounded-lg p-4">
+                  <p class="text-gray-400 text-sm mb-1">Upper Band</p>
+                  <p class="text-3xl font-mono text-red-400">$${bands.upper.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                  <p class="text-sm text-gray-500 mt-1">+${((bands.upper - bands.current) / bands.current * 100).toFixed(2)}%</p>
+                </div>
+                
+                <div class="bg-black bg-opacity-40 rounded-lg p-4">
+                  <p class="text-gray-400 text-sm mb-1">Middle (20 SMA)</p>
+                  <p class="text-3xl font-mono text-blue-400">$${bands.middle.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                  <p class="text-sm text-gray-500 mt-1">${bands.current > bands.middle ? '+' : ''}${((bands.middle - bands.current) / bands.current * 100).toFixed(2)}%</p>
+                </div>
+                
+                <div class="bg-black bg-opacity-40 rounded-lg p-4">
+                  <p class="text-gray-400 text-sm mb-1">Lower Band</p>
+                  <p class="text-3xl font-mono text-green-400">$${bands.lower.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                  <p class="text-sm text-gray-500 mt-1">${((bands.lower - bands.current) / bands.current * 100).toFixed(2)}%</p>
+                </div>
+
+                <div class="bg-black bg-opacity-40 rounded-lg p-4">
+                  <p class="text-gray-400 text-sm mb-1">Band Width</p>
+                  <p class="text-2xl font-mono text-purple-400">${((bands.upper - bands.lower) / bands.middle * 100).toFixed(2)}%</p>
+                  <p class="text-xs text-gray-500 mt-1">${((bands.upper - bands.lower) / bands.middle * 100) > 8 ? 'High volatility' : 'Low volatility'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-gray-900 border border-gray-800 rounded-lg p-6 mb-8">
+            <h3 class="text-2xl font-bold mb-6">Price & Bollinger Bands (Last 50 Hours)</h3>
+            <div style="height: 500px;">
+              <canvas id="priceChart"></canvas>
+            </div>
+          </div>
+
+          <div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
+            <h3 class="text-xl font-bold mb-4">⚠️ How to Use These Signals</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 class="font-bold text-green-400 mb-3">BUY SIGNALS (Bottom Band)</h4>
+                <ul class="space-y-2 text-sm text-gray-300">
+                  <li><strong class="text-green-400">STRONG BUY (85-100%):</strong> Price at bottom band. Maximum confidence entry.</li>
+                  <li><strong class="text-green-300">BUY (60-85%):</strong> Price near bottom. Good entry zone.</li>
+                  <li><strong class="text-blue-400">CONSIDER BUY (30-60%):</strong> Lower half. Possible setup.</li>
+                </ul>
+              </div>
+              <div>
+                <h4 class="font-bold text-red-400 mb-3">SELL SIGNALS (Top Band)</h4>
+                <ul class="space-y-2 text-sm text-gray-300">
+                  <li><strong class="text-red-400">STRONG SELL (85-100%):</strong> Price at top band. Take profits immediately.</li>
+                  <li><strong class="text-orange-400">SELL (60-85%):</strong> Price near top. Good exit zone.</li>
+                  <li><strong class="text-yellow-400">CONSIDER SELL (30-60%):</strong> Upper half. Watch for reversal.</li>
+                </ul>
+              </div>
+            </div>
+            <div class="mt-6 p-4 bg-purple-900 bg-opacity-30 border border-purple-700 rounded">
+              <p class="text-sm text-purple-200">
+                <strong>Key:</strong> Bollinger Bands show statistical extremes (2 standard deviations = 95% probability). When price hits the bands, it's at a level that historically doesn't last - expect mean reversion.
+              </p>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      document.getElementById('coinSelect').addEventListener('change', (e) => {
+        selectedCoin = e.target.value;
+        fetchData();
+      });
+      
+      setTimeout(() => createChart(chartData), 100);
+    }
+
+    fetchData();
+    setInterval(fetchData, 120000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+[build]
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+```
+
+## **Updated folder structure:**
+```
+Bollinger Bands/
+├── index.html
+├── netlify.toml          ← ADD THIS NEW FILE
+└── netlify/
+    └── functions/
+        └── crypto-data.js
