@@ -59,20 +59,30 @@
       const chartRef = useRef(null);
       const chartInstance = useRef(null);
 
-      const calculateBollingerBands = (prices, period = 20, stdDev = 2) => {
-        if (prices.length < period) return null;
+      // Strategy Parameters
+      const [startingCapital, setStartingCapital] = useState(10000);
+      const [leverage, setLeverage] = useState(10);
+      const [period, setPeriod] = useState(20);
+      const [stdDev, setStdDev] = useState(2.0);
+      const [buyZone, setBuyZone] = useState(5);
+      const [sellZone, setSellZone] = useState(5);
+      const [stopLossEnabled, setStopLossEnabled] = useState(false);
+      const [stopLossPercent, setStopLossPercent] = useState(20);
+
+      const calculateBollingerBands = (prices, customPeriod, customStdDev) => {
+        if (prices.length < customPeriod) return null;
         
-        const recentPrices = prices.slice(-period);
-        const sma = recentPrices.reduce((a, b) => a + b, 0) / period;
+        const recentPrices = prices.slice(-customPeriod);
+        const sma = recentPrices.reduce((a, b) => a + b, 0) / customPeriod;
         
         const squaredDiffs = recentPrices.map(price => Math.pow(price - sma, 2));
-        const variance = squaredDiffs.reduce((a, b) => a + b, 0) / period;
+        const variance = squaredDiffs.reduce((a, b) => a + b, 0) / customPeriod;
         const standardDeviation = Math.sqrt(variance);
         
         return {
-          upper: sma + (standardDeviation * stdDev),
+          upper: sma + (standardDeviation * customStdDev),
           middle: sma,
-          lower: sma - (standardDeviation * stdDev)
+          lower: sma - (standardDeviation * customStdDev)
         };
       };
 
@@ -81,28 +91,29 @@
         return ((price - bands.lower) / (bands.upper - bands.lower)) * 100;
       };
 
-      const getSignal = (position) => {
+      const getSignal = (position, customBuyZone, customSellZone) => {
         if (position === null) return null;
-        if (position <= 5) return 'BUY';
-        if (position >= 95) return 'SELL';
+        if (position <= customBuyZone) return 'BUY';
+        if (position >= (100 - customSellZone)) return 'SELL';
         return null;
       };
 
-      const runBacktest = (historicalData) => {
+      const runBacktest = (historicalData, params) => {
         const trades = [];
         let position = null;
         let entryPrice = 0;
-        let capital = 10000;
+        let capital = params.startingCapital;
         let totalCapital = capital;
         
         const chartData = [];
+        const signals = [];
         
-        for (let i = 20; i < historicalData.length; i++) {
+        for (let i = params.period; i < historicalData.length; i++) {
           const prices = historicalData.slice(0, i + 1).map(d => d.close);
           const currentPrice = prices[prices.length - 1];
-          const bands = calculateBollingerBands(prices);
+          const bands = calculateBollingerBands(prices, params.period, params.stdDev);
           const positionInBand = getPositionInBand(currentPrice, bands);
-          const signal = getSignal(positionInBand);
+          const signal = getSignal(positionInBand, params.buyZone, params.sellZone);
           
           chartData.push({
             timestamp: historicalData[i].timestamp,
@@ -110,41 +121,64 @@
             upper: bands.upper,
             middle: bands.middle,
             lower: bands.lower,
-            signal: signal
+            positionInBand: positionInBand
           });
           
+          // Check stop loss
+          if (position === 'long' && params.stopLossEnabled) {
+            const currentLoss = ((currentPrice - entryPrice) / entryPrice) * 100;
+            if (currentLoss <= -params.stopLossPercent) {
+              const pnl = ((currentPrice - entryPrice) / entryPrice) * capital * params.leverage;
+              totalCapital += pnl;
+              trades.push({
+                type: 'long',
+                entry: entryPrice,
+                exit: currentPrice,
+                exitReason: 'Stop Loss',
+                pnl: pnl,
+                pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage,
+                timestamp: historicalData[i].timestamp
+              });
+              position = null;
+              capital = totalCapital;
+              continue;
+            }
+          }
+          
           if (signal === 'BUY' && position === null) {
-            // Enter LONG position
             position = 'long';
             entryPrice = currentPrice;
             capital = totalCapital;
+            signals.push({ index: i, type: 'BUY', price: currentPrice });
           } else if (signal === 'SELL' && position === 'long') {
-            // Exit LONG position, take profit, go to cash
-            const pnl = ((currentPrice - entryPrice) / entryPrice) * capital * 10;
+            const pnl = ((currentPrice - entryPrice) / entryPrice) * capital * params.leverage;
             totalCapital += pnl;
             trades.push({
               type: 'long',
               entry: entryPrice,
               exit: currentPrice,
+              exitReason: 'Signal',
               pnl: pnl,
-              pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * 10,
+              pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage,
               timestamp: historicalData[i].timestamp
             });
-            position = null; // Go to cash
+            position = null;
             capital = totalCapital;
+            signals.push({ index: i, type: 'SELL', price: currentPrice });
           }
         }
         
         const winningTrades = trades.filter(t => t.pnl > 0);
         const losingTrades = trades.filter(t => t.pnl < 0);
         const winRate = trades.length > 0 ? (winningTrades.length / trades.length) * 100 : 0;
-        const totalReturn = ((totalCapital - 10000) / 10000) * 100;
+        const totalReturn = ((totalCapital - params.startingCapital) / params.startingCapital) * 100;
         const avgWin = winningTrades.length > 0 ? winningTrades.reduce((sum, t) => sum + t.pnl, 0) / winningTrades.length : 0;
         const avgLoss = losingTrades.length > 0 ? losingTrades.reduce((sum, t) => sum + t.pnl, 0) / losingTrades.length : 0;
         
         return {
           trades,
           chartData,
+          signals,
           metrics: {
             totalTrades: trades.length,
             winningTrades: winningTrades.length,
@@ -171,8 +205,6 @@
             }));
             
             setData(historicalData);
-            const backtestResults = runBacktest(historicalData);
-            setBacktest(backtestResults);
           } catch (error) {
             console.error('Error fetching data:', error);
           } finally {
@@ -184,20 +216,53 @@
       }, [coin]);
 
       useEffect(() => {
+        if (!data) return;
+        
+        const params = {
+          startingCapital,
+          leverage,
+          period,
+          stdDev,
+          buyZone,
+          sellZone,
+          stopLossEnabled,
+          stopLossPercent
+        };
+        
+        const backtestResults = runBacktest(data, params);
+        setBacktest(backtestResults);
+      }, [data, startingCapital, leverage, period, stdDev, buyZone, sellZone, stopLossEnabled, stopLossPercent]);
+
+      useEffect(() => {
         if (!backtest || !chartRef.current) return;
 
-        // Destroy existing chart
         if (chartInstance.current) {
           chartInstance.current.destroy();
         }
 
         const ctx = chartRef.current.getContext('2d');
-        const displayData = backtest.chartData.slice(-100); // Last 100 points
+        const displayData = backtest.chartData.slice(-200);
+
+        const buySignals = backtest.signals
+          .filter(s => s.type === 'BUY')
+          .filter(s => s.index >= backtest.chartData.length - 200)
+          .map(s => ({
+            x: displayData.findIndex(d => d.timestamp.getTime() === data[s.index].timestamp.getTime()),
+            y: s.price
+          }));
+
+        const sellSignals = backtest.signals
+          .filter(s => s.type === 'SELL')
+          .filter(s => s.index >= backtest.chartData.length - 200)
+          .map(s => ({
+            x: displayData.findIndex(d => d.timestamp.getTime() === data[s.index].timestamp.getTime()),
+            y: s.price
+          }));
 
         chartInstance.current = new Chart(ctx, {
           type: 'line',
           data: {
-            labels: displayData.map(d => d.timestamp.toLocaleDateString()),
+            labels: displayData.map((d, i) => i),
             datasets: [
               {
                 label: 'Price',
@@ -205,16 +270,19 @@
                 borderColor: '#FFFFFF',
                 backgroundColor: 'transparent',
                 borderWidth: 2,
-                pointRadius: 0
+                pointRadius: 0,
+                order: 2
               },
               {
                 label: 'Upper Band',
                 data: displayData.map(d => d.upper),
                 borderColor: '#EF4444',
-                backgroundColor: 'transparent',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                fill: '+1',
                 borderWidth: 1,
                 borderDash: [5, 5],
-                pointRadius: 0
+                pointRadius: 0,
+                order: 3
               },
               {
                 label: 'Middle Band',
@@ -222,16 +290,41 @@
                 borderColor: '#3B82F6',
                 backgroundColor: 'transparent',
                 borderWidth: 1,
-                pointRadius: 0
+                pointRadius: 0,
+                order: 4
               },
               {
                 label: 'Lower Band',
                 data: displayData.map(d => d.lower),
                 borderColor: '#10B981',
-                backgroundColor: 'transparent',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                fill: 'origin',
                 borderWidth: 1,
                 borderDash: [5, 5],
-                pointRadius: 0
+                pointRadius: 0,
+                order: 5
+              },
+              {
+                label: 'BUY Signals',
+                data: buySignals,
+                type: 'scatter',
+                backgroundColor: '#10B981',
+                borderColor: '#FFFFFF',
+                borderWidth: 2,
+                pointRadius: 8,
+                pointHoverRadius: 10,
+                order: 1
+              },
+              {
+                label: 'SELL Signals',
+                data: sellSignals,
+                type: 'scatter',
+                backgroundColor: '#EF4444',
+                borderColor: '#FFFFFF',
+                borderWidth: 2,
+                pointRadius: 8,
+                pointHoverRadius: 10,
+                order: 1
               }
             ]
           },
@@ -242,6 +335,14 @@
               legend: {
                 labels: {
                   color: '#9CA3AF'
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  title: function(context) {
+                    const index = context[0].dataIndex;
+                    return displayData[index]?.timestamp.toLocaleString() || '';
+                  }
                 }
               }
             },
@@ -272,14 +373,14 @@
             chartInstance.current.destroy();
           }
         };
-      }, [backtest]);
+      }, [backtest, data]);
 
       if (loading) {
         return (
           <div className="min-h-screen bg-gray-900 text-white p-8 flex items-center justify-center">
             <div className="text-center">
               <Activity />
-              <p className="text-xl mt-4">Running backtest simulation...</p>
+              <p className="text-xl mt-4">Loading data...</p>
             </div>
           </div>
         );
@@ -298,7 +399,7 @@
           <div className="max-w-7xl mx-auto">
             <div className="mb-8">
               <h1 className="text-4xl font-bold mb-4">📊 Bollinger Bands Backtest</h1>
-              <p className="text-gray-400">Historical performance analysis with 10x leverage simulation</p>
+              <p className="text-gray-400">Interactive historical performance analysis</p>
               
               <div className="flex gap-4 mt-6">
                 {['BTC', 'ETH', 'SOL', 'ZEC'].map(c => (
@@ -317,6 +418,158 @@
               </div>
             </div>
 
+            {/* Settings Panel */}
+            <div className="bg-gray-800 p-6 rounded-xl mb-8 border-2 border-blue-500">
+              <h2 className="text-2xl font-bold mb-6">⚙️ Strategy Settings</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Starting Capital */}
+                <div>
+                  <label className="block text-gray-400 mb-2">Starting Capital</label>
+                  <input
+                    type="number"
+                    value={startingCapital}
+                    onChange={(e) => setStartingCapital(Number(e.target.value))}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    placeholder="10000"
+                  />
+                </div>
+
+                {/* Leverage */}
+                <div>
+                  <label className="block text-gray-400 mb-2">Leverage</label>
+                  <div className="flex gap-2">
+                    {[5, 10, 20, 40].map(lev => (
+                      <button
+                        key={lev}
+                        onClick={() => setLeverage(lev)}
+                        className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all ${
+                          leverage === lev
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                      >
+                        {lev}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Period */}
+                <div>
+                  <label className="block text-gray-400 mb-2">Period: {period}</label>
+                  <input
+                    type="range"
+                    min="10"
+                    max="30"
+                    step="5"
+                    value={period}
+                    onChange={(e) => setPeriod(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>10</span>
+                    <span>15</span>
+                    <span>20</span>
+                    <span>25</span>
+                    <span>30</span>
+                  </div>
+                </div>
+
+                {/* Std Dev */}
+                <div>
+                  <label className="block text-gray-400 mb-2">Std Dev: {stdDev.toFixed(1)}</label>
+                  <input
+                    type="range"
+                    min="1.5"
+                    max="3.0"
+                    step="0.5"
+                    value={stdDev}
+                    onChange={(e) => setStdDev(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>1.5</span>
+                    <span>2.0</span>
+                    <span>2.5</span>
+                    <span>3.0</span>
+                  </div>
+                </div>
+
+                {/* Buy Zone */}
+                <div>
+                  <label className="block text-gray-400 mb-2">Buy Zone (0-{buyZone}%)</label>
+                  <input
+                    type="range"
+                    min="3"
+                    max="10"
+                    step="1"
+                    value={buyZone}
+                    onChange={(e) => setBuyZone(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>3%</span>
+                    <span>5%</span>
+                    <span>10%</span>
+                  </div>
+                </div>
+
+                {/* Sell Zone */}
+                <div>
+                  <label className="block text-gray-400 mb-2">Sell Zone ({100-sellZone}-100%)</label>
+                  <input
+                    type="range"
+                    min="3"
+                    max="10"
+                    step="1"
+                    value={sellZone}
+                    onChange={(e) => setSellZone(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>90%</span>
+                    <span>95%</span>
+                    <span>97%</span>
+                  </div>
+                </div>
+
+                {/* Stop Loss */}
+                <div className="md:col-span-2">
+                  <label className="flex items-center text-gray-400 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={stopLossEnabled}
+                      onChange={(e) => setStopLossEnabled(e.target.checked)}
+                      className="mr-2 w-5 h-5"
+                    />
+                    Enable Stop Loss
+                  </label>
+                  {stopLossEnabled && (
+                    <div className="mt-4">
+                      <label className="block text-gray-400 mb-2">Stop Loss: -{stopLossPercent}%</label>
+                      <div className="flex gap-2">
+                        {[10, 15, 20, 30].map(sl => (
+                          <button
+                            key={sl}
+                            onClick={() => setStopLossPercent(sl)}
+                            className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-all ${
+                              stopLossPercent === sl
+                                ? 'bg-red-600 text-white'
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            }`}
+                          >
+                            -{sl}%
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Metrics Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               <div className={`p-6 rounded-xl ${metrics.totalReturn >= 0 ? 'bg-green-900/30 border-2 border-green-500' : 'bg-red-900/30 border-2 border-red-500'}`}>
                 <div className="flex items-center justify-between mb-2">
@@ -371,13 +624,15 @@
               </div>
             </div>
 
+            {/* Chart */}
             <div className="bg-gray-800 p-6 rounded-xl mb-8">
-              <h2 className="text-2xl font-bold mb-6">Price & Bollinger Bands (Last 100 Hours)</h2>
-              <div style={{ height: '400px' }}>
+              <h2 className="text-2xl font-bold mb-6">Price & Signals (Last 200 Hours)</h2>
+              <div style={{ height: '500px' }}>
                 <canvas ref={chartRef}></canvas>
               </div>
             </div>
 
+            {/* Trade History */}
             <div className="bg-gray-800 p-6 rounded-xl">
               <h2 className="text-2xl font-bold mb-6">Recent Trades (Last 10)</h2>
               <div className="overflow-x-auto">
@@ -388,6 +643,7 @@
                       <th className="text-left p-3 text-gray-400">Type</th>
                       <th className="text-right p-3 text-gray-400">Entry</th>
                       <th className="text-right p-3 text-gray-400">Exit</th>
+                      <th className="text-left p-3 text-gray-400">Exit Reason</th>
                       <th className="text-right p-3 text-gray-400">P&L</th>
                       <th className="text-right p-3 text-gray-400">Return</th>
                     </tr>
@@ -397,14 +653,17 @@
                       <tr key={idx} className="border-b border-gray-700/50">
                         <td className="p-3 text-gray-300">{trade.timestamp.toLocaleDateString()}</td>
                         <td className="p-3">
-                          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                            trade.type === 'long' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
-                          }`}>
-                            {trade.type.toUpperCase()}
+                          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-green-900 text-green-300">
+                            LONG
                           </span>
                         </td>
                         <td className="p-3 text-right text-gray-300">${trade.entry.toLocaleString()}</td>
                         <td className="p-3 text-right text-gray-300">${trade.exit.toLocaleString()}</td>
+                        <td className="p-3 text-gray-300">
+                          <span className={`text-xs ${trade.exitReason === 'Stop Loss' ? 'text-red-400' : 'text-blue-400'}`}>
+                            {trade.exitReason}
+                          </span>
+                        </td>
                         <td className={`p-3 text-right font-bold ${trade.pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                           {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}
                         </td>
@@ -416,17 +675,6 @@
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            <div className="mt-8 bg-blue-900/20 border-2 border-blue-500 rounded-xl p-6">
-              <h3 className="text-xl font-bold mb-3">📋 Strategy Details</h3>
-              <ul className="space-y-2 text-gray-300">
-                <li>• <strong>Entry:</strong> STRONG BUY signal (price at 0-5% in band) → Open 10x LONG</li>
-                <li>• <strong>Exit:</strong> STRONG SELL signal (price at 95-100% in band) → Close LONG, take profit</li>
-                <li>• <strong>Position:</strong> Either 10x LONG or 100% CASH (never short)</li>
-                <li>• <strong>Starting Capital:</strong> $10,000</li>
-                <li>• <strong>Data:</strong> Last {Math.round(data.length / 24)} days of hourly candles</li>
-              </ul>
             </div>
           </div>
         </div>
