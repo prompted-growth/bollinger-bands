@@ -44,26 +44,28 @@ async function sendSMS(message) {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const fromNumber = process.env.TWILIO_PHONE_NUMBER;
-  const toNumber = process.env.YOUR_PHONE_NUMBER;
+  const toNumbers = process.env.YOUR_PHONE_NUMBER.split(',');
   
   const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
   
-  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      From: fromNumber,
-      To: toNumber,
-      Body: message
+  const sendPromises = toNumbers.map(toNumber => 
+    fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        From: fromNumber,
+        To: toNumber.trim(),
+        Body: message
+      })
     })
-  });
+  );
   
-  return response.ok;
+  const results = await Promise.all(sendPromises);
+  return results.every(r => r.ok);
 }
-
 // Check if we should send alert (cooldown logic)
 function shouldSendAlert(symbol, signal) {
   const now = Date.now();
