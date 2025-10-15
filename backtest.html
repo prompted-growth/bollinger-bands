@@ -51,13 +51,23 @@
       </svg>
     );
 
+    const AlertTriangle = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+    );
+
     function BollingerBacktest() {
       const [coin, setCoin] = useState('BTC');
       const [data, setData] = useState(null);
       const [backtest, setBacktest] = useState(null);
       const [loading, setLoading] = useState(true);
       const chartRef = useRef(null);
+      const equityChartRef = useRef(null);
       const chartInstance = useRef(null);
+      const equityChartInstance = useRef(null);
 
       // Strategy Parameters
       const [startingCapital, setStartingCapital] = useState(10000);
@@ -69,6 +79,8 @@
       const [stopLossEnabled, setStopLossEnabled] = useState(false);
       const [stopLossPercent, setStopLossPercent] = useState(20);
       const [dateRange, setDateRange] = useState('all');
+      const [positionSize, setPositionSize] = useState(100);
+      const [tradingFees, setTradingFees] = useState(0.1);
       
       // Signal visibility toggles
       const [showStrongBuy, setShowStrongBuy] = useState(true);
@@ -111,12 +123,10 @@
         if (position === null) return [];
         const signals = [];
         
-        // Buy signals
         if (position <= 5) signals.push('STRONG_BUY');
         else if (position > 5 && position <= 15) signals.push('BUY');
         else if (position > 15 && position <= 35) signals.push('CONSIDER_BUY');
         
-        // Sell signals
         if (position >= 95) signals.push('STRONG_SELL');
         else if (position < 95 && position >= 85) signals.push('SELL');
         else if (position < 85 && position >= 65) signals.push('CONSIDER_SELL');
@@ -125,7 +135,6 @@
       };
 
       const runBacktest = (historicalData, params) => {
-        // Filter data by date range
         let filteredData = historicalData;
         const now = new Date(historicalData[historicalData.length - 1].timestamp);
         
@@ -139,20 +148,20 @@
           const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
           filteredData = historicalData.filter(d => d.timestamp >= cutoff);
         }
-        // 'all' uses all data
         
         const trades = [];
         let position = null;
         let entryPrice = 0;
-        let capital = params.startingCapital;
-        let totalCapital = capital;
-        let peakCapital = capital;
+        let positionCapital = 0;
+        let availableCapital = params.startingCapital;
+        let totalCapital = params.startingCapital;
+        let peakCapital = params.startingCapital;
         let maxDrawdown = 0;
-        let currentDrawdown = 0;
+        let totalFees = 0;
         
         const chartData = [];
         const signals = [];
-        const allSignalPoints = []; // Store all signal types
+        const allSignalPoints = [];
         const equityCurve = [];
         
         for (let i = params.period; i < filteredData.length; i++) {
@@ -172,7 +181,6 @@
             positionInBand: positionInBand
           });
           
-          // Store all signal types for visualization
           allSignals.forEach(sig => {
             allSignalPoints.push({
               index: i,
@@ -182,11 +190,10 @@
             });
           });
           
-          // Track equity curve
-          let currentEquity = totalCapital;
+          let currentEquity = availableCapital;
           if (position === 'long') {
-            const unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * capital * params.leverage;
-            currentEquity = totalCapital + unrealizedPnL;
+            const unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * positionCapital * params.leverage;
+            currentEquity = availableCapital + positionCapital + unrealizedPnL;
           }
           
           equityCurve.push({
@@ -194,11 +201,12 @@
             equity: currentEquity
           });
           
-          // Update peak and drawdown
+          totalCapital = currentEquity;
+          
           if (currentEquity > peakCapital) {
             peakCapital = currentEquity;
           }
-          currentDrawdown = ((currentEquity - peakCapital) / peakCapital) * 100;
+          const currentDrawdown = ((currentEquity - peakCapital) / peakCapital) * 100;
           if (currentDrawdown < maxDrawdown) {
             maxDrawdown = currentDrawdown;
           }
@@ -207,12 +215,13 @@
           if (position === 'long') {
             const priceChangePercent = ((currentPrice - entryPrice) / entryPrice) * 100;
             const leveragedLoss = priceChangePercent * params.leverage;
-            const liquidationThreshold = -90; // Liquidate at -90% total loss
+            const liquidationThreshold = -90;
             
             if (leveragedLoss <= liquidationThreshold) {
-              // LIQUIDATED!
-              const pnl = -capital * 0.9; // Lost 90% of position (exchanges keep some as insurance)
-              totalCapital = totalCapital + pnl;
+              const pnl = -positionCapital * 0.9;
+              availableCapital = availableCapital + positionCapital + pnl;
+              totalCapital = availableCapital;
+              
               trades.push({
                 type: 'long',
                 entry: entryPrice,
@@ -220,62 +229,87 @@
                 exitReason: '💀 LIQUIDATED',
                 pnl: pnl,
                 pnlPercent: leveragedLoss,
+                fees: 0,
                 timestamp: filteredData[i].timestamp
               });
-              position = null;
               
-              // Can only continue if we have capital left
+              position = null;
+              positionCapital = 0;
+              
               if (totalCapital <= 0) {
                 totalCapital = 0;
-                capital = 0;
+                availableCapital = 0;
                 break;
               }
-              
-              capital = totalCapital;
               continue;
             }
           }
           
-          // Check stop loss
+          // Stop loss check
           if (position === 'long' && params.stopLossEnabled) {
             const currentLoss = ((currentPrice - entryPrice) / entryPrice) * 100;
             if (currentLoss <= -params.stopLossPercent) {
-              const pnl = ((currentPrice - entryPrice) / entryPrice) * capital * params.leverage;
-              totalCapital += pnl;
+              const pnl = ((currentPrice - entryPrice) / entryPrice) * positionCapital * params.leverage;
+              const exitFee = Math.abs(positionCapital + pnl) * (params.tradingFees / 100);
+              totalFees += exitFee;
+              const netPnl = pnl - exitFee;
+              
+              availableCapital = availableCapital + positionCapital + netPnl;
+              totalCapital = availableCapital;
+              
               trades.push({
                 type: 'long',
                 entry: entryPrice,
                 exit: currentPrice,
                 exitReason: 'Stop Loss',
-                pnl: pnl,
+                pnl: netPnl,
                 pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage,
+                fees: exitFee,
                 timestamp: filteredData[i].timestamp
               });
+              
               position = null;
-              capital = totalCapital;
+              positionCapital = 0;
               continue;
             }
           }
           
-          if (signal === 'BUY' && position === null && totalCapital > 0) {
+          // Entry signal
+          if (signal === 'BUY' && position === null && availableCapital > 0) {
             position = 'long';
             entryPrice = currentPrice;
-            capital = totalCapital;
+            positionCapital = availableCapital * (params.positionSize / 100);
+            
+            const entryFee = positionCapital * (params.tradingFees / 100);
+            totalFees += entryFee;
+            positionCapital -= entryFee;
+            availableCapital -= (availableCapital * (params.positionSize / 100));
+            
             signals.push({ index: i, type: 'BUY', price: currentPrice });
-          } else if (signal === 'SELL' && position === 'long') {
-            const pnl = ((currentPrice - entryPrice) / entryPrice) * capital * params.leverage;
-            totalCapital += pnl;
+          } 
+          // Exit signal
+          else if (signal === 'SELL' && position === 'long') {
+            const pnl = ((currentPrice - entryPrice) / entryPrice) * positionCapital * params.leverage;
+            const exitFee = Math.abs(positionCapital + pnl) * (params.tradingFees / 100);
+            totalFees += exitFee;
+            const netPnl = pnl - exitFee;
+            
+            availableCapital = availableCapital + positionCapital + netPnl;
+            totalCapital = availableCapital;
+            
             trades.push({
               type: 'long',
               entry: entryPrice,
               exit: currentPrice,
               exitReason: 'Signal',
-              pnl: pnl,
+              pnl: netPnl,
               pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage,
+              fees: exitFee,
               timestamp: filteredData[i].timestamp
             });
+            
             position = null;
-            capital = totalCapital;
+            positionCapital = 0;
             signals.push({ index: i, type: 'SELL', price: currentPrice });
           }
         }
@@ -286,6 +320,22 @@
         const totalReturn = ((totalCapital - params.startingCapital) / params.startingCapital) * 100;
         const avgWin = winningTrades.length > 0 ? winningTrades.reduce((sum, t) => sum + t.pnl, 0) / winningTrades.length : 0;
         const avgLoss = losingTrades.length > 0 ? losingTrades.reduce((sum, t) => sum + t.pnl, 0) / losingTrades.length : 0;
+        
+        const profitFactor = losingTrades.length > 0 
+          ? Math.abs(winningTrades.reduce((sum, t) => sum + t.pnl, 0)) / Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0))
+          : winningTrades.length > 0 ? Infinity : 0;
+        
+        // Calculate Sharpe Ratio
+        const returns = equityCurve.map((point, idx) => {
+          if (idx === 0) return 0;
+          return (point.equity - equityCurve[idx - 1].equity) / equityCurve[idx - 1].equity;
+        });
+        
+        const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+        const stdReturn = Math.sqrt(
+          returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length
+        );
+        const sharpeRatio = stdReturn !== 0 ? (avgReturn / stdReturn) * Math.sqrt(8760) : 0;
         
         return {
           trades,
@@ -304,7 +354,10 @@
             avgLoss,
             maxDrawdown: maxDrawdown,
             peakCapital: peakCapital,
-            wasLiquidated: totalCapital === 0
+            wasLiquidated: totalCapital === 0,
+            profitFactor: profitFactor,
+            sharpeRatio: sharpeRatio,
+            totalFees: totalFees
           }
         };
       };
@@ -344,12 +397,14 @@
           sellZone,
           stopLossEnabled,
           stopLossPercent,
-          dateRange
+          dateRange,
+          positionSize,
+          tradingFees
         };
         
         const backtestResults = runBacktest(data, params);
         setBacktest(backtestResults);
-      }, [data, startingCapital, leverage, period, stdDev, buyZone, sellZone, stopLossEnabled, stopLossPercent, dateRange]);
+      }, [data, startingCapital, leverage, period, stdDev, buyZone, sellZone, stopLossEnabled, stopLossPercent, dateRange, positionSize, tradingFees]);
 
       useEffect(() => {
         if (!backtest || !chartRef.current) return;
@@ -361,7 +416,6 @@
         const ctx = chartRef.current.getContext('2d');
         const displayData = backtest.chartData.slice(-200);
 
-        // Filter signals based on toggles
         const visibleSignals = backtest.allSignalPoints.filter(s => {
           if (s.type === 'STRONG_BUY' && showStrongBuy) return true;
           if (s.type === 'BUY' && showBuy) return true;
@@ -372,7 +426,6 @@
           return false;
         }).filter(s => s.index >= backtest.chartData.length - 200);
 
-        // Group by type for different colors/sizes
         const strongBuySignals = visibleSignals
           .filter(s => s.type === 'STRONG_BUY')
           .map(s => ({
@@ -458,7 +511,6 @@
           }
         ];
 
-        // Add signal datasets if they have data
         if (strongBuySignals.length > 0) {
           datasets.push({
             label: '🟢 STRONG BUY',
@@ -596,6 +648,98 @@
         };
       }, [backtest, data, showStrongBuy, showBuy, showConsiderBuy, showStrongSell, showSell, showConsiderSell]);
 
+      // Equity curve chart
+      useEffect(() => {
+        if (!backtest || !equityChartRef.current) return;
+
+        if (equityChartInstance.current) {
+          equityChartInstance.current.destroy();
+        }
+
+        const ctx = equityChartRef.current.getContext('2d');
+        const equityData = backtest.equityCurve;
+
+        equityChartInstance.current = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: equityData.map((d, i) => i),
+            datasets: [
+              {
+                label: 'Account Value',
+                data: equityData.map(d => d.equity),
+                borderColor: backtest.metrics.totalReturn >= 0 ? '#10B981' : '#EF4444',
+                backgroundColor: backtest.metrics.totalReturn >= 0 
+                  ? 'rgba(16, 185, 129, 0.1)' 
+                  : 'rgba(239, 68, 68, 0.1)',
+                fill: true,
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.1
+              },
+              {
+                label: 'Starting Capital',
+                data: equityData.map(() => startingCapital),
+                borderColor: '#3B82F6',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                borderDash: [5, 5],
+                pointRadius: 0
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: {
+                  color: '#9CA3AF'
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  title: function(context) {
+                    const index = context[0].dataIndex;
+                    return equityData[index]?.timestamp.toLocaleString() || '';
+                  },
+                  label: function(context) {
+                    return `$${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: {
+                  color: '#9CA3AF',
+                  maxTicksLimit: 10
+                },
+                grid: {
+                  color: '#374151'
+                }
+              },
+              y: {
+                ticks: {
+                  color: '#9CA3AF',
+                  callback: function(value) {
+                    return '$' + value.toLocaleString();
+                  }
+                },
+                grid: {
+                  color: '#374151'
+                }
+              }
+            }
+          }
+        });
+
+        return () => {
+          if (equityChartInstance.current) {
+            equityChartInstance.current.destroy();
+          }
+        };
+      }, [backtest, startingCapital]);
+
       if (loading) {
         return (
           <div className="min-h-screen bg-gray-900 text-white p-8 flex items-center justify-center">
@@ -638,6 +782,45 @@
                 ))}
               </div>
             </div>
+
+            {/* Warning Banner */}
+            <div className="bg-red-900/30 border-2 border-red-500 p-6 rounded-xl mb-8">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 mt-1">
+                  <AlertTriangle />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold mb-3 text-red-400">⚠️ Educational Tool Only</h3>
+                  <ul className="space-y-2 text-sm text-gray-300">
+                    <li className="flex items-start gap-2">
+                      <span className="text-red-400 font-bold">•</span>
+                      <span><strong>Past performance does NOT guarantee future results.</strong> Markets change constantly.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-red-400 font-bold">•</span>
+                      <span>This backtest uses perfect hindsight with instant fills and no slippage - real trading is messier.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-red-400 font-bold">•</span>
+                      <span>Real trading includes emotional factors, network delays, and market impact that backtests cannot simulate.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-red-400 font-bold">•</span>
+                      <span><strong>High leverage can lead to total loss.</strong> Never risk more than you can afford to lose.</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Position Sizing Notice */}
+            {positionSize === 100 && (
+              <div className="bg-yellow-900/30 border-2 border-yellow-500 p-4 rounded-lg mb-6">
+                <p className="text-sm text-yellow-200">
+                  💡 <strong>Note:</strong> You're using 100% of capital per trade. Real traders typically use 10-25% position sizing for better risk management. Adjust below in Advanced Settings.
+                </p>
+              </div>
+            )}
 
             {/* Settings Panel */}
             <div className="bg-gray-800 p-6 rounded-xl mb-8 border-2 border-blue-500">
@@ -813,10 +996,66 @@
                   )}
                 </div>
               </div>
+
+              {/* Advanced Settings */}
+              <details className="mt-6 pt-6 border-t border-gray-700">
+                <summary className="cursor-pointer text-lg font-semibold text-blue-400 hover:text-blue-300">
+                  ⚙️ Advanced Settings
+                </summary>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Position Size */}
+                  <div>
+                    <label className="block text-gray-400 mb-2">Position Size: {positionSize}%</label>
+                    <input
+                      type="range"
+                      min="10"
+                      max="100"
+                      step="10"
+                      value={positionSize}
+                      onChange={(e) => setPositionSize(Number(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>10%</span>
+                      <span>25%</span>
+                      <span>50%</span>
+                      <span>75%</span>
+                      <span>100%</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Percentage of available capital to use per trade
+                    </p>
+                  </div>
+
+                  {/* Trading Fees */}
+                  <div>
+                    <label className="block text-gray-400 mb-2">Trading Fees: {tradingFees}%</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="0.2"
+                      step="0.05"
+                      value={tradingFees}
+                      onChange={(e) => setTradingFees(Number(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>0%</span>
+                      <span>0.05%</span>
+                      <span>0.1%</span>
+                      <span>0.15%</span>
+                      <span>0.2%</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Fee per trade (both entry and exit)
+                    </p>
+                  </div>
+                </div>
+              </details>
             </div>
 
             {/* Metrics Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
               <div className={`p-6 rounded-xl ${
                 metrics.wasLiquidated 
                   ? 'bg-red-900/50 border-2 border-red-500'
@@ -914,9 +1153,90 @@
                   Peak: ${metrics.peakCapital.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}
                 </div>
               </div>
+
+              <div className={`p-6 rounded-xl border-2 ${
+                metrics.profitFactor >= 2 
+                  ? 'bg-green-900/30 border-green-500'
+                  : metrics.profitFactor >= 1
+                    ? 'bg-gray-800 border-gray-700'
+                    : 'bg-red-900/30 border-red-500'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400 text-sm">Profit Factor</span>
+                  <DollarSign />
+                </div>
+                <div className={`text-3xl font-bold ${
+                  metrics.profitFactor >= 2 
+                    ? 'text-green-500'
+                    : metrics.profitFactor >= 1
+                      ? 'text-gray-300'
+                      : 'text-red-500'
+                }`}>
+                  {metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)}
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                  {metrics.profitFactor >= 1.5 ? 'Excellent' : metrics.profitFactor >= 1 ? 'Good' : 'Poor'}
+                </div>
+              </div>
             </div>
 
-            {/* Chart */}
+            {/* Additional Metrics Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Sharpe Ratio</span>
+                  <Activity />
+                </div>
+                <div className={`text-3xl font-bold ${
+                  metrics.sharpeRatio >= 2 
+                    ? 'text-green-500'
+                    : metrics.sharpeRatio >= 1
+                      ? 'text-blue-500'
+                      : 'text-gray-300'
+                }`}>
+                  {metrics.sharpeRatio.toFixed(2)}
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                  {metrics.sharpeRatio >= 2 ? 'Excellent' : metrics.sharpeRatio >= 1 ? 'Good' : metrics.sharpeRatio >= 0 ? 'Fair' : 'Poor'} risk-adjusted returns
+                </div>
+              </div>
+
+              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Total Fees Paid</span>
+                  <DollarSign />
+                </div>
+                <div className="text-3xl font-bold text-orange-500">
+                  ${metrics.totalFees.toFixed(2)}
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                  {((metrics.totalFees / startingCapital) * 100).toFixed(2)}% of starting capital
+                </div>
+              </div>
+
+              <div className="bg-gray-800 p-6 rounded-xl border-2 border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Avg Trade Duration</span>
+                  <Activity />
+                </div>
+                <div className="text-3xl font-bold text-purple-500">
+                  {trades.length > 1 ? Math.round((backtest.chartData.length / trades.length)) : 0}h
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                  Average hours per trade
+                </div>
+              </div>
+            </div>
+
+            {/* Equity Curve Chart */}
+            <div className="bg-gray-800 p-6 rounded-xl mb-8">
+              <h2 className="text-2xl font-bold mb-4">💰 Account Value Over Time</h2>
+              <div style={{ height: '400px' }}>
+                <canvas ref={equityChartRef}></canvas>
+              </div>
+            </div>
+
+            {/* Price Chart */}
             <div className="bg-gray-800 p-6 rounded-xl mb-8">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Price & Signals (Last 200 Hours)</h2>
@@ -1047,6 +1367,7 @@
                       <th className="text-right p-3 text-gray-400">Entry</th>
                       <th className="text-right p-3 text-gray-400">Exit</th>
                       <th className="text-left p-3 text-gray-400">Exit Reason</th>
+                      <th className="text-right p-3 text-gray-400">Fees</th>
                       <th className="text-right p-3 text-gray-400">P&L</th>
                       <th className="text-right p-3 text-gray-400">Return</th>
                     </tr>
@@ -1063,9 +1384,12 @@
                         <td className="p-3 text-right text-gray-300">${trade.entry.toLocaleString()}</td>
                         <td className="p-3 text-right text-gray-300">${trade.exit.toLocaleString()}</td>
                         <td className="p-3 text-gray-300">
-                          <span className={`text-xs ${trade.exitReason === 'Stop Loss' ? 'text-red-400' : 'text-blue-400'}`}>
+                          <span className={`text-xs ${trade.exitReason === 'Stop Loss' ? 'text-red-400' : trade.exitReason.includes('LIQUIDATED') ? 'text-red-600 font-bold' : 'text-blue-400'}`}>
                             {trade.exitReason}
                           </span>
+                        </td>
+                        <td className="p-3 text-right text-orange-400 text-sm">
+                          ${trade.fees?.toFixed(2) || '0.00'}
                         </td>
                         <td className={`p-3 text-right font-bold ${trade.pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                           {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}
