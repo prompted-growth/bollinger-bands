@@ -1,0 +1,25 @@
+name: Check Crypto Alerts
+
+on:
+  schedule:
+    - cron: '*/2 * * * *'  # Every 2 minutes
+  workflow_dispatch:  # Adds a manual "Run workflow" button
+
+jobs:
+  check-alerts:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Trigger Netlify Function
+        run: |
+          response=$(curl -s -w "\n%{http_code}" https://bollingerboy.netlify.app/.netlify/functions/check-alerts)
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+          
+          if [ "$http_code" -ne 200 ]; then
+            echo "Error: Function returned status $http_code"
+            exit 1
+          fi
