@@ -205,27 +205,34 @@
           
           // LIQUIDATION LOGIC
           if (position === 'long') {
-            const currentPnLPercent = ((currentPrice - entryPrice) / entryPrice) * 100 * params.leverage;
-            const liquidationThreshold = -(100 / params.leverage) * 0.95; // 95% of max loss before liquidation
+            const priceChangePercent = ((currentPrice - entryPrice) / entryPrice) * 100;
+            const leveragedLoss = priceChangePercent * params.leverage;
+            const liquidationThreshold = -90; // Liquidate at -90% total loss
             
-            if (currentPnLPercent <= liquidationThreshold) {
+            if (leveragedLoss <= liquidationThreshold) {
               // LIQUIDATED!
-              const pnl = -capital; // Lost entire position
-              totalCapital = 0;
+              const pnl = -capital * 0.9; // Lost 90% of position (exchanges keep some as insurance)
+              totalCapital = totalCapital + pnl;
               trades.push({
                 type: 'long',
                 entry: entryPrice,
                 exit: currentPrice,
                 exitReason: '💀 LIQUIDATED',
                 pnl: pnl,
-                pnlPercent: -100,
+                pnlPercent: leveragedLoss,
                 timestamp: filteredData[i].timestamp
               });
               position = null;
-              capital = 0;
               
-              // Can't continue trading with $0
-              break;
+              // Can only continue if we have capital left
+              if (totalCapital <= 0) {
+                totalCapital = 0;
+                capital = 0;
+                break;
+              }
+              
+              capital = totalCapital;
+              continue;
             }
           }
           
