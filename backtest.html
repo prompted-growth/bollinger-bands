@@ -113,37 +113,24 @@
             signal: signal
           });
           
-          if (signal === 'BUY' && position !== 'long') {
-            if (position === 'short') {
-              const pnl = ((entryPrice - currentPrice) / entryPrice) * capital * 10;
-              totalCapital += pnl;
-              trades.push({
-                type: 'short',
-                entry: entryPrice,
-                exit: currentPrice,
-                pnl: pnl,
-                pnlPercent: ((entryPrice - currentPrice) / entryPrice) * 100 * 10,
-                timestamp: historicalData[i].timestamp
-              });
-            }
+          if (signal === 'BUY' && position === null) {
+            // Enter LONG position
             position = 'long';
             entryPrice = currentPrice;
             capital = totalCapital;
-          } else if (signal === 'SELL' && position !== 'short') {
-            if (position === 'long') {
-              const pnl = ((currentPrice - entryPrice) / entryPrice) * capital * 10;
-              totalCapital += pnl;
-              trades.push({
-                type: 'long',
-                entry: entryPrice,
-                exit: currentPrice,
-                pnl: pnl,
-                pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * 10,
-                timestamp: historicalData[i].timestamp
-              });
-            }
-            position = 'short';
-            entryPrice = currentPrice;
+          } else if (signal === 'SELL' && position === 'long') {
+            // Exit LONG position, take profit, go to cash
+            const pnl = ((currentPrice - entryPrice) / entryPrice) * capital * 10;
+            totalCapital += pnl;
+            trades.push({
+              type: 'long',
+              entry: entryPrice,
+              exit: currentPrice,
+              pnl: pnl,
+              pnlPercent: ((currentPrice - entryPrice) / entryPrice) * 100 * 10,
+              timestamp: historicalData[i].timestamp
+            });
+            position = null; // Go to cash
             capital = totalCapital;
           }
         }
@@ -434,9 +421,9 @@
             <div className="mt-8 bg-blue-900/20 border-2 border-blue-500 rounded-xl p-6">
               <h3 className="text-xl font-bold mb-3">📋 Strategy Details</h3>
               <ul className="space-y-2 text-gray-300">
-                <li>• <strong>Entry:</strong> STRONG BUY signal (price at 0-5% in band) → Open LONG</li>
-                <li>• <strong>Exit:</strong> STRONG SELL signal (price at 95-100% in band) → Close LONG, Open SHORT</li>
-                <li>• <strong>Leverage:</strong> 10x on all trades</li>
+                <li>• <strong>Entry:</strong> STRONG BUY signal (price at 0-5% in band) → Open 10x LONG</li>
+                <li>• <strong>Exit:</strong> STRONG SELL signal (price at 95-100% in band) → Close LONG, take profit</li>
+                <li>• <strong>Position:</strong> Either 10x LONG or 100% CASH (never short)</li>
                 <li>• <strong>Starting Capital:</strong> $10,000</li>
                 <li>• <strong>Data:</strong> Last {Math.round(data.length / 24)} days of hourly candles</li>
               </ul>
