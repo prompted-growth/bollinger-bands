@@ -766,20 +766,29 @@
               <h1 className="text-4xl font-bold mb-4">📊 Bollinger Bands Backtest</h1>
               <p className="text-gray-400">Interactive historical performance analysis</p>
               
-              <div className="flex gap-4 mt-6">
-                {['BTC', 'ETH', 'SOL', 'ZEC'].map(c => (
-                  <button
-                    key={c}
-                    onClick={() => setCoin(c)}
-                    className={`px-6 py-3 rounded-lg font-semibold transition-all ${
-                      coin === c
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                    }`}
-                  >
-                    {c}
-                  </button>
-                ))}
+              <div className="flex gap-4 mt-6 flex-wrap">
+                <div className="flex gap-4">
+                  {['BTC', 'ETH', 'SOL', 'ZEC'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setCoin(c)}
+                      className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+                        coin === c
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+                <a 
+                  href="readme.html" 
+                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold transition-all inline-flex items-center gap-2"
+                >
+                  <span>📖</span>
+                  <span>READ ME - Full Guide</span>
+                </a>
               </div>
             </div>
 
